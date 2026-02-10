@@ -1,0 +1,338 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  OPERATOR
+}
+
+enum ConnectorType {
+  CCS1
+  CCS2
+  CHADEMO
+  TESLA
+  J1772
+  TYPE2
+  NACS
+  GB_T        // Chinese standard
+}
+
+enum PortStatus {
+  AVAILABLE
+  IN_USE
+  OUT_OF_ORDER
+  UNKNOWN
+}
+
+enum ChargerType {
+  LEVEL1
+  LEVEL2
+  DCFC
+}
+
+// ============================================================================
+// USER & AUTH
+// ============================================================================
+
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  passwordHash  String?      // Null for OAuth-only users
+  firstName     String?
+  lastName      String?
+  avatarUrl     String?
+  provider      AuthProvider @default(EMAIL)
+  providerId    String?      // Google sub, Apple sub, etc.
+  emailVerified Boolean      @default(false)
+  role          UserRole     @default(USER)
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?    // Soft delete
+
+  // Relations
+  refreshTokens RefreshToken[]
+  userVehicles  UserVehicle[]
+  favorites     Favorite[]
+  reviews       Review[]
+
+  @@index([email])
+  @@index([providerId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  tokenHash   String   @unique // SHA256 hash of the token
+  userId      String
+  userAgent   String?
+  ipAddress   String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// VEHICLES (Brand -> Model -> User Selection)
+// ============================================================================
+
+model VehicleBrand {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  logoUrl   String?
+  country   String?  // Country of origin
+  isActive  Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  models VehicleModel[]
+
+  @@index([name])
+  @@map("vehicle_brands")
+}
+
+model VehicleModel {
+  id              String        @id @default(uuid())
+  brandId         String
+  name            String
+  year            Int?          // Model year if specific
+  connectorType   ConnectorType // Inferred connector for this model
+  batteryCapacityKwh Float?
+  rangeKm         Float?        // Estimated range
+  imageUrl        String?
+  isActive        Boolean       @default(true)
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  brand        VehicleBrand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  userVehicles UserVehicle[]
+
+  @@unique([brandId, name, year])
+  @@index([brandId])
+  @@index([connectorType])
+  @@map("vehicle_models")
+}
+
+model UserVehicle {
+  id          String   @id @default(uuid())
+  userId      String
+  modelId     String
+  nickname    String?
+  isPrimary   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model VehicleModel @relation(fields: [modelId], references: [id])
+
+  @@unique([userId, modelId])
+  @@index([userId])
+  @@index([modelId])
+  @@map("user_vehicles")
+}
+
+// ============================================================================
+// STATIONS & INFRASTRUCTURE
+// ============================================================================
+
+model Network {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  website     String?
+  logoUrl     String?
+  phoneNumber String?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  stations Station[]
+
+  @@map("networks")
+}
+
+model Station {
+  id              String    @id @default(uuid())
+  networkId       String?
+  name            String
+  description     String?
+  
+  // Location
+  address         String
+  city            String
+  state           String
+  postalCode      String?
+  country         String    @default("NG")  // Nigeria first
+  latitude        Float
+  longitude       Float
+  timezone        String    @default("Africa/Lagos")
+  
+  // Status
+  isActive        Boolean   @default(true)
+  isVerified      Boolean   @default(false)  // Admin verified
+  
+  // Operating Hours (JSON: { "mon": { "open": "08:00", "close": "22:00" }, ... } or null for 24h)
+  // Use "24h" as special value for always open
+  operatingHours  Json?
+  
+  // Amenities (JSON array: ["restrooms", "wifi", "food", "shopping", "parking"])
+  amenities       Json      @default("[]")
+  
+  // Pricing (JSON: { "perKwh": 350, "perMinute": null, "sessionFee": 500, "currency": "NGN" })
+  pricing         Json?
+  
+  // Contact
+  phoneNumber     String?
+  email           String?
+  
+  // Aggregate Stats (denormalized for performance)
+  totalPorts      Int       @default(0)
+  availablePorts  Int       @default(0)
+  avgRating       Float?
+  reviewCount     Int       @default(0)
+  
+  // Tracking
+  lastStatusUpdate DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  network   Network?       @relation(fields: [networkId], references: [id])
+  ports     Port[]
+  favorites Favorite[]
+  reviews   Review[]
+  images    StationImage[]
+
+  @@index([networkId])
+  @@index([latitude, longitude])
+  @@index([city, state])
+  @@index([isActive])
+  @@map("stations")
+}
+
+model Port {
+  id                   String        @id @default(uuid())
+  stationId            String
+  connectorType        ConnectorType
+  chargerType          ChargerType
+  powerKw              Float
+  status               PortStatus    @default(UNKNOWN)
+  
+  // Pricing (can override station pricing)
+  pricePerKwh          Float?
+  pricePerMinute       Float?
+  pricePerSession      Float?
+  
+  // Port identifier at the station (e.g., "A1", "B2")
+  portNumber           String?
+  
+  // Availability tracking
+  estimatedAvailableAt DateTime?     // When port might be available if IN_USE
+  lastStatusUpdate     DateTime?
+  
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  // Relations
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId])
+  @@index([status])
+  @@index([connectorType])
+  @@map("ports")
+}
+
+model StationImage {
+  id          String   @id @default(uuid())
+  stationId   String
+  url         String
+  caption     String?
+  sortOrder   Int      @default(0)
+  isPrimary   Boolean  @default(false)
+  uploadedBy  String?  // userId who uploaded
+  
+  createdAt   DateTime @default(now())
+
+  // Relations
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId])
+  @@index([sortOrder])
+  @@map("station_images")
+}
+
+// ============================================================================
+// USER INTERACTIONS
+// ============================================================================
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  stationId String
+  createdAt DateTime @default(now())
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stationId])
+  @@index([userId])
+  @@index([stationId])
+  @@map("favorites")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  stationId String
+  rating    Int      // 1-5 stars
+  comment   String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, createdAt])
+  @@index([userId])
+  @@map("reviews")
+}
