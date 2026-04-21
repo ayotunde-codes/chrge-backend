@@ -24,6 +24,10 @@ export class EnvironmentVariables {
   DATABASE_URL: string;
 
   @IsString()
+  @IsOptional()
+  DIRECT_URL: string;
+
+  @IsString()
   JWT_SECRET: string;
 
   @IsString()
@@ -92,6 +96,7 @@ export const appConfig = () => ({
   apiPrefix: process.env.API_PREFIX || 'api/v1',
   database: {
     url: process.env.DATABASE_URL,
+    directUrl: process.env.DIRECT_URL,
   },
   jwt: {
     secret: process.env.JWT_SECRET,

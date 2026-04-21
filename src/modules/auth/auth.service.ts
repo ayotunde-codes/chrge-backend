@@ -77,6 +77,7 @@ export class AuthService {
     return {
       user: this.mapUserToResponse(user),
       ...tokens,
+      isNewUser: true,
     };
   }
 
@@ -113,6 +114,7 @@ export class AuthService {
     return {
       user: this.mapUserToResponse(user),
       ...tokens,
+      isNewUser: false,
     };
   }
 
@@ -122,6 +124,9 @@ export class AuthService {
   async googleLogin(dto: GoogleLoginDto, meta: RequestMeta): Promise<AuthResponseDto> {
     // Verify Google ID token
     const googleUser: GoogleUserInfo = await this.googleAuthService.verifyIdToken(dto.idToken);
+
+    // Track whether this is a new account
+    let isNewUser = false;
 
     // Try to find existing user by Google ID or email
     let user = await this.prisma.user.findFirst({
@@ -134,7 +139,12 @@ export class AuthService {
     });
 
     if (user) {
-      // If user exists with email but different provider, link Google account
+      // Reject deactivated accounts before any update
+      if (user.deletedAt) {
+        throw new UnauthorizedException('Account has been deactivated');
+      }
+
+      // If user exists with email but different provider, link Google account and sync profile
       if (user.provider !== AuthProvider.GOOGLE) {
         user = await this.prisma.user.update({
           where: { id: user.id },
@@ -142,15 +152,22 @@ export class AuthService {
             provider: AuthProvider.GOOGLE,
             providerId: googleUser.sub,
             emailVerified: true,
-            avatarUrl: user.avatarUrl || googleUser.picture,
+            firstName: googleUser.given_name ?? user.firstName,
+            lastName: googleUser.family_name ?? user.lastName,
+            avatarUrl: googleUser.picture ?? user.avatarUrl,
           },
         });
         this.logger.log(`Linked Google account to existing user: ${user.id}`);
-      }
-
-      // Check if user is soft deleted
-      if (user.deletedAt) {
-        throw new UnauthorizedException('Account has been deactivated');
+      } else {
+        // Existing Google user: keep profile in sync with Google (name, avatar)
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            firstName: googleUser.given_name ?? user.firstName,
+            lastName: googleUser.family_name ?? user.lastName,
+            avatarUrl: googleUser.picture ?? user.avatarUrl,
+          },
+        });
       }
     } else {
       // Create new user
@@ -165,6 +182,7 @@ export class AuthService {
           emailVerified: true,
         },
       });
+      isNewUser = true;
       this.logger.log(`New user created via Google: ${user.id}`);
     }
 
@@ -174,6 +192,7 @@ export class AuthService {
     return {
       user: this.mapUserToResponse(user),
       ...tokens,
+      isNewUser,
     };
   }
 
@@ -190,6 +209,7 @@ export class AuthService {
       accessToken,
       refreshToken: newRefreshToken,
       expiresIn,
+      isNewUser: false,
     };
   }
 

@@ -6,6 +6,8 @@ import {
   Param,
   UseGuards,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
@@ -27,6 +29,7 @@ import {
   PortResponseDto,
   StationImageResponseDto,
 } from './dto/admin.dto';
+import { ReviewStationDto } from '../stations/dto/submit-station.dto';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -50,6 +53,7 @@ export class AdminController {
       id: brand.id,
       name: brand.name,
       logoUrl: brand.logoUrl,
+      darkLogo: brand.darkLogo ?? null,
       country: brand.country,
       isActive: brand.isActive,
       createdAt: brand.createdAt,
@@ -66,12 +70,15 @@ export class AdminController {
   @ApiResponse({ status: 201, type: VehicleModelResponseDto })
   async createModel(@Body() dto: CreateVehicleModelDto): Promise<VehicleModelResponseDto> {
     const model = await this.adminService.createModel(dto);
+    const connectors = Array.isArray(model.connectors) ? (model.connectors as string[]) : [];
     return {
       id: model.id,
       brandId: model.brandId,
       name: model.name,
-      year: model.year,
+      powertrain: model.powertrain,
+      connectors,
       connectorType: model.connectorType,
+      year: model.year,
       batteryCapacityKwh: model.batteryCapacityKwh,
       rangeKm: model.rangeKm,
       imageUrl: model.imageUrl,
@@ -101,6 +108,23 @@ export class AdminController {
   ): Promise<StationResponseDto> {
     const station = await this.adminService.updateStation(id, dto);
     return this.mapStation(station);
+  }
+
+  @Patch('stations/:id/review')
+  @Roles('ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve or reject a submitted station' })
+  @ApiResponse({ status: 200, type: StationResponseDto })
+  async reviewStation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewStationDto,
+  ): Promise<StationResponseDto & { status: string; rejectionReason: string | null }> {
+    const station = await this.adminService.reviewStation(id, dto);
+    return {
+      ...this.mapStation(station),
+      status: (station as unknown as { status: string }).status,
+      rejectionReason: (station as unknown as { rejectionReason: string | null }).rejectionReason,
+    };
   }
 
   // ============================================================================

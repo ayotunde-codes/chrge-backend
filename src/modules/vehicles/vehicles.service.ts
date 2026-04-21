@@ -183,6 +183,24 @@ export class VehiclesService {
       where: { userId, isPrimary: true, deletedAt: null },
       include: { model: true },
     });
-    return primaryVehicle?.model.connectorType || null;
+    if (!primaryVehicle?.model) return null;
+    const model = primaryVehicle.model;
+    const connectors = model.connectors as string[] | null;
+    if (Array.isArray(connectors) && connectors.length > 0) {
+      const first = connectors[0];
+      const map: Record<string, ConnectorType> = {
+        CCS1: ConnectorType.CCS1,
+        CCS2: ConnectorType.CCS2,
+        CHADEMO: ConnectorType.CHADEMO,
+        TESLA: ConnectorType.TESLA,
+        J1772: ConnectorType.J1772,
+        TYPE_2: ConnectorType.TYPE_2,
+        TYPE2: ConnectorType.TYPE2,
+        NACS: ConnectorType.NACS,
+        GB_T: ConnectorType.GB_T,
+      };
+      return map[first] ?? model.connectorType ?? null;
+    }
+    return model.connectorType ?? null;
   }
 }

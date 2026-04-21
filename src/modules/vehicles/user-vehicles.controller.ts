@@ -74,8 +74,10 @@ export class UserVehiclesController {
     model: {
       id: string;
       name: string;
+      powertrain: string;
+      connectors: unknown;
+      connectorType: string | null;
       year: number | null;
-      connectorType: string;
       batteryCapacityKwh: number | null;
       rangeKm: number | null;
       imageUrl: string | null;
@@ -83,9 +85,11 @@ export class UserVehiclesController {
         id: string;
         name: string;
         logoUrl: string | null;
+        darkLogo: boolean | null;
       };
     };
   }): UserVehicleResponseDto {
+    const connectors = Array.isArray(vehicle.model.connectors) ? vehicle.model.connectors : [];
     return {
       id: vehicle.id,
       nickname: vehicle.nickname,
@@ -94,8 +98,10 @@ export class UserVehiclesController {
       model: {
         id: vehicle.model.id,
         name: vehicle.model.name,
-        year: vehicle.model.year,
+        powertrain: vehicle.model.powertrain,
+        connectors: connectors as string[],
         connectorType: vehicle.model.connectorType,
+        year: vehicle.model.year,
         batteryCapacityKwh: vehicle.model.batteryCapacityKwh,
         rangeKm: vehicle.model.rangeKm,
         imageUrl: vehicle.model.imageUrl,
@@ -104,6 +110,7 @@ export class UserVehiclesController {
         id: vehicle.model.brand.id,
         name: vehicle.model.brand.name,
         logoUrl: vehicle.model.brand.logoUrl,
+        darkLogo: vehicle.model.brand.darkLogo ?? null,
       },
     };
   }

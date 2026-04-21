@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class BrandInfo {
-  @ApiProperty({ example: 'uuid' })
+  @ApiProperty({ example: 'tesla' })
   id: string;
 
   @ApiProperty({ example: 'Tesla' })
@@ -9,20 +9,29 @@ class BrandInfo {
 
   @ApiPropertyOptional({ example: 'https://example.com/logo.png' })
   logoUrl: string | null;
+
+  @ApiPropertyOptional({ example: true })
+  darkLogo: boolean | null;
 }
 
 class ModelInfo {
-  @ApiProperty({ example: 'uuid' })
+  @ApiProperty({ example: 'model-3' })
   id: string;
 
-  @ApiProperty({ example: 'Model 3 Long Range' })
+  @ApiProperty({ example: 'Model 3' })
   name: string;
+
+  @ApiProperty({ example: 'BEV', enum: ['BEV', 'PHEV', 'EREV'] })
+  powertrain: string;
+
+  @ApiProperty({ example: ['NACS', 'CCS2'] })
+  connectors: string[];
+
+  @ApiPropertyOptional({ example: 'CCS2' })
+  connectorType: string | null;
 
   @ApiPropertyOptional({ example: 2024 })
   year: number | null;
-
-  @ApiProperty({ example: 'CCS2' })
-  connectorType: string;
 
   @ApiPropertyOptional({ example: 82 })
   batteryCapacityKwh: number | null;

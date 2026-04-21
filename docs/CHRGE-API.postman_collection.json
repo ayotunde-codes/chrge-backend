@@ -1,0 +1,720 @@
+{
+  "info": {
+    "name": "CHRGE API",
+    "description": "CHRGE Backend API — EV Charging Station Platform.\n\n**Quick start:**\n1. Run Register, Login, or Google Login — tokens are saved automatically.\n2. All authenticated requests use `{{accessToken}}` from the collection variable.\n3. Use `{{refreshToken}}` to rotate tokens silently.\n\n**Base URL:** `http://localhost:3000/api/v1`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "chrge-api-collection"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:3000/api/v1" },
+    { "key": "accessToken",  "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "stationId",    "value": "" },
+    { "key": "vehicleId",    "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Register, login, Google OAuth, token refresh and logout.",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken)  pm.collectionVariables.set('accessToken',  res.accessToken);",
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "// res.isNewUser === true → redirect to /onboarding (vehicle picker)"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecureP@ss123\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Create a new account with email + password. `firstName` and `lastName` are optional — great for low-friction sign-up. Returns `isNewUser: true` so the frontend can route to onboarding."
+          },
+          "response": [
+            {
+              "name": "201 Created — new account",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": \"cm8abc123\",\n    \"email\": \"user@example.com\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"avatarUrl\": null,\n    \"provider\": \"EMAIL\",\n    \"emailVerified\": false,\n    \"role\": \"USER\",\n    \"createdAt\": \"2026-02-18T10:00:00.000Z\"\n  },\n  \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refreshToken\": \"a1b2c3d4e5f6789...\",\n  \"expiresIn\": 900,\n  \"isNewUser\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken)  pm.collectionVariables.set('accessToken',  res.accessToken);",
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "// res.isNewUser === false for existing accounts"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@chrge.ng\",\n  \"password\": \"TestPassword123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Sign in with email + password. Returns `isNewUser: false` for existing accounts."
+          },
+          "response": [
+            {
+              "name": "200 OK — existing account",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": \"cm8abc123\",\n    \"email\": \"test@chrge.ng\",\n    \"firstName\": \"Test\",\n    \"lastName\": \"User\",\n    \"avatarUrl\": null,\n    \"provider\": \"EMAIL\",\n    \"emailVerified\": false,\n    \"role\": \"USER\",\n    \"createdAt\": \"2026-01-01T00:00:00.000Z\"\n  },\n  \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refreshToken\": \"a1b2c3d4e5f6789...\",\n  \"expiresIn\": 900,\n  \"isNewUser\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Google Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken)  pm.collectionVariables.set('accessToken',  res.accessToken);",
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);",
+                  "// res.isNewUser === true  → redirect to /onboarding (vehicle picker)",
+                  "// res.isNewUser === false → redirect to /app"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"YOUR_GOOGLE_ID_TOKEN\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/google",
+            "description": "Sign in / sign up with Google. Pass the raw `credential` string from Google Identity Services (e.g. `@react-oauth/google` `onSuccess({ credential })`). The backend verifies it server-side — no OAuth redirect needed.\n\n- New accounts: `isNewUser: true`, name + avatar auto-populated from Google.\n- Returning accounts: `isNewUser: false`, name + avatar synced from Google on every login.\n- Existing email account: Google is linked automatically."
+          },
+          "response": [
+            {
+              "name": "200 OK — new Google user (→ onboarding)",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": \"cm8xyz456\",\n    \"email\": \"jane@gmail.com\",\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Smith\",\n    \"avatarUrl\": \"https://lh3.googleusercontent.com/a/...\",\n    \"provider\": \"GOOGLE\",\n    \"emailVerified\": true,\n    \"role\": \"USER\",\n    \"createdAt\": \"2026-02-18T10:05:00.000Z\"\n  },\n  \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refreshToken\": \"a1b2c3d4e5f6789...\",\n  \"expiresIn\": 900,\n  \"isNewUser\": true\n}"
+            },
+            {
+              "name": "200 OK — returning Google user (→ app)",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": \"cm8xyz456\",\n    \"email\": \"jane@gmail.com\",\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Smith\",\n    \"avatarUrl\": \"https://lh3.googleusercontent.com/a/...\",\n    \"provider\": \"GOOGLE\",\n    \"emailVerified\": true,\n    \"role\": \"USER\",\n    \"createdAt\": \"2026-01-15T08:30:00.000Z\"\n  },\n  \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refreshToken\": \"a1b2c3d4e5f6789...\",\n  \"expiresIn\": 900,\n  \"isNewUser\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken)  pm.collectionVariables.set('accessToken',  res.accessToken);",
+                  "if (res.refreshToken) pm.collectionVariables.set('refreshToken', res.refreshToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/refresh",
+            "description": "Rotate tokens silently. Old refresh token is invalidated; new pair is returned. Call this when the access token expires (after `expiresIn` seconds)."
+          },
+          "response": [
+            {
+              "name": "200 OK — tokens rotated",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": \"cm8abc123\",\n    \"email\": \"user@example.com\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"avatarUrl\": null,\n    \"provider\": \"EMAIL\",\n    \"emailVerified\": false,\n    \"role\": \"USER\",\n    \"createdAt\": \"2026-01-01T00:00:00.000Z\"\n  },\n  \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refreshToken\": \"b9c8d7e6f5432...\",\n  \"expiresIn\": 900,\n  \"isNewUser\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/logout",
+            "description": "Revoke the current refresh token. Pass `\"revokeAll\": true` to sign out of all devices."
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/auth/me",
+            "description": "Returns the authenticated user's profile."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"cm8abc123\",\n  \"email\": \"user@example.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"avatarUrl\": null,\n  \"provider\": \"EMAIL\",\n  \"emailVerified\": false,\n  \"role\": \"USER\",\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "User profile management.",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/users/me"
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"avatarUrl\": \"https://example.com/avatar.png\"\n}"
+            },
+            "url": "{{baseUrl}}/users/me",
+            "description": "All fields are optional. Google users' name/avatar are synced from Google on each login but can be overridden here."
+          }
+        },
+        {
+          "name": "Delete My Account",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/users/me",
+            "description": "Soft-deletes the account. The user cannot log in after this."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vehicles (Public)",
+      "description": "Vehicle brands and models — no auth required. Used for the onboarding vehicle picker.",
+      "item": [
+        {
+          "name": "Get All Brands",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/vehicles/brands",
+              "host": ["{{baseUrl}}"],
+              "path": ["vehicles", "brands"],
+              "query": [
+                { "key": "search", "value": "Tesla", "disabled": true, "description": "Filter brands by name" }
+              ]
+            },
+            "description": "Returns all active vehicle brands. `darkLogo: true` means the brand logo needs a dark/light background treatment."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"tesla\",\n    \"name\": \"Tesla\",\n    \"logoUrl\": null,\n    \"darkLogo\": true\n  },\n  {\n    \"id\": \"audi\",\n    \"name\": \"Audi\",\n    \"logoUrl\": null,\n    \"darkLogo\": true\n  },\n  {\n    \"id\": \"byd\",\n    \"name\": \"BYD\",\n    \"logoUrl\": null,\n    \"darkLogo\": false\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get Models by Brand",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/vehicles/brands/tesla/models",
+            "description": "Returns all active models for a brand. `powertrain` is `BEV`, `PHEV`, or `EREV`. `connectors` is an ordered array — first element is the primary connector for station filtering."
+          },
+          "response": [
+            {
+              "name": "200 OK — Tesla models",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"model-3\",\n    \"brandId\": \"tesla\",\n    \"name\": \"Model 3\",\n    \"powertrain\": \"BEV\",\n    \"connectors\": [\"NACS\", \"CCS2\"],\n    \"connectorType\": \"NACS\",\n    \"year\": null,\n    \"imageUrl\": null\n  },\n  {\n    \"id\": \"model-y\",\n    \"brandId\": \"tesla\",\n    \"name\": \"Model Y\",\n    \"powertrain\": \"BEV\",\n    \"connectors\": [\"NACS\", \"CCS2\"],\n    \"connectorType\": \"NACS\",\n    \"year\": null,\n    \"imageUrl\": null\n  },\n  {\n    \"id\": \"cybertruck\",\n    \"brandId\": \"tesla\",\n    \"name\": \"Cybertruck\",\n    \"powertrain\": \"BEV\",\n    \"connectors\": [\"NACS\", \"CCS2\"],\n    \"connectorType\": \"NACS\",\n    \"year\": null,\n    \"imageUrl\": null\n  }\n]"
+            },
+            {
+              "name": "200 OK — BYD models (PHEV example)",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"atto-3\",\n    \"brandId\": \"byd\",\n    \"name\": \"Atto 3 (Yuan Plus)\",\n    \"powertrain\": \"BEV\",\n    \"connectors\": [\"TYPE_2\", \"CCS2\"],\n    \"connectorType\": \"TYPE_2\",\n    \"year\": null,\n    \"imageUrl\": null\n  },\n  {\n    \"id\": \"seal-u-dmi\",\n    \"brandId\": \"byd\",\n    \"name\": \"Seal U DM-i\",\n    \"powertrain\": \"PHEV\",\n    \"connectors\": [\"TYPE_2\"],\n    \"connectorType\": \"TYPE_2\",\n    \"year\": null,\n    \"imageUrl\": null\n  }\n]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "My Vehicles",
+      "description": "Manage the authenticated user's saved vehicles. The primary vehicle's first connector is used to auto-filter nearby stations.",
+      "item": [
+        {
+          "name": "Get My Vehicles",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/me/vehicles"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"uv-uuid-1\",\n    \"modelId\": \"model-3\",\n    \"nickname\": \"My Tesla\",\n    \"isPrimary\": true,\n    \"model\": {\n      \"id\": \"model-3\",\n      \"name\": \"Model 3\",\n      \"powertrain\": \"BEV\",\n      \"connectors\": [\"NACS\", \"CCS2\"],\n      \"brand\": {\n        \"id\": \"tesla\",\n        \"name\": \"Tesla\"\n      }\n    }\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Add Vehicle",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelId\": \"model-3\",\n  \"nickname\": \"My Tesla\",\n  \"setPrimary\": true\n}"
+            },
+            "url": "{{baseUrl}}/me/vehicles",
+            "description": "Add a vehicle by `modelId` (stable string ID from the brands/models endpoints). Set `setPrimary: true` to make it the primary vehicle for station filtering."
+          }
+        },
+        {
+          "name": "Update Vehicle",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"My Daily Driver\",\n  \"isPrimary\": true\n}"
+            },
+            "url": "{{baseUrl}}/me/vehicles/:id"
+          }
+        },
+        {
+          "name": "Remove Vehicle",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/me/vehicles/:id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stations",
+      "description": "Discover and interact with EV charging stations.\n\n**Station card fields (list endpoints):**\n- `area` — neighbourhood/district (e.g. \"Victoria Island\")\n- `lat` / `lng` — coordinates\n- `rating` — average star rating (1–5)\n- `openingHoursText` — human-readable string (\"Open 24/7\", \"Closes at 22:00\", etc.)\n- `priceText` — human-readable price (\"₦350/kWh\", \"₦350/kWh + ₦500 session\")\n- `statusSummary` — `AVAILABLE` | `IN_USE` | `OUT_OF_SERVICE`\n- `connectors` — array of `{ type, powerKw, count }` aggregated from ports\n- `images` — flat array of image URLs (hero first)",
+      "item": [
+        {
+          "name": "Get All Stations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "disabled": true }],
+            "url": {
+              "raw": "{{baseUrl}}/stations",
+              "host": ["{{baseUrl}}"],
+              "path": ["stations"],
+              "query": [
+                { "key": "city",       "value": "Lagos",       "disabled": true,  "description": "Filter by city (case-insensitive)" },
+                { "key": "area",       "value": "Lekki",       "disabled": true,  "description": "Filter by area / neighbourhood" },
+                { "key": "search",     "value": "CHRGE",       "disabled": true,  "description": "Search by station name" },
+                { "key": "connectors", "value": "CCS2,TYPE_2", "disabled": true,  "description": "Filter by connector types (comma-separated)" },
+                { "key": "openNow",    "value": "true",        "disabled": true,  "description": "Only show currently open stations" },
+                { "key": "status",     "value": "AVAILABLE",   "disabled": true,  "description": "Filter by port status" },
+                { "key": "minPowerKw", "value": "50",          "disabled": true,  "description": "Minimum port power in kW" },
+                { "key": "limit",      "value": "20",          "disabled": true,  "description": "Results per page (default 20, max 50)" },
+                { "key": "cursor",     "value": "",            "disabled": true,  "description": "Pagination cursor (offset from previous response)" }
+              ]
+            },
+            "description": "Fetch all active stations without needing a location. Sorted by rating (desc) then name. All filters are optional. Auth is optional — pass token to get `isFavorite` status per station.\n\nUse this for a full station list / map view. Use `/stations/nearby` when you have the user's coordinates."
+          },
+          "response": [
+            {
+              "name": "200 OK — all stations",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"stations\": [\n    {\n      \"id\": \"uuid-station-1\",\n      \"name\": \"CHRGE Lekki Phase 1\",\n      \"address\": \"12 Admiralty Way, Lekki Phase 1\",\n      \"area\": \"Lekki Phase 1\",\n      \"city\": \"Lagos\",\n      \"lat\": 6.4281,\n      \"lng\": 3.4219,\n      \"heroImageUrl\": \"https://chrge.ng/stations/lekki-1-main.jpg\",\n      \"images\": [\"https://chrge.ng/stations/lekki-1-main.jpg\"],\n      \"distanceKm\": null,\n      \"rating\": 4.8,\n      \"reviewCount\": 12,\n      \"isOpenNow\": true,\n      \"openingHoursText\": \"Open 24/7\",\n      \"priceText\": \"₦350/kWh + ₦500 session\",\n      \"statusSummary\": \"AVAILABLE\",\n      \"portsAvailableCount\": 4,\n      \"portsTotalCount\": 5,\n      \"connectors\": [\n        { \"type\": \"CCS2\",  \"powerKw\": 150, \"count\": 3 },\n        { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n      ],\n      \"amenities\": [\"restrooms\", \"wifi\", \"security\"],\n      \"updatedAt\": \"2026-02-18T09:00:00.000Z\",\n      \"isFavorite\": false\n    }\n  ],\n  \"nextCursor\": \"20\"\n}"
+            },
+            {
+              "name": "200 OK — filtered by city + connector",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"stations\": [\n    {\n      \"id\": \"uuid-station-2\",\n      \"name\": \"CHRGE Victoria Island\",\n      \"address\": \"24 Adeola Odeku Street, Victoria Island\",\n      \"area\": \"Victoria Island\",\n      \"city\": \"Lagos\",\n      \"lat\": 6.4281,\n      \"lng\": 3.4194,\n      \"heroImageUrl\": \"https://chrge.ng/stations/vi-main.jpg\",\n      \"images\": [\"https://chrge.ng/stations/vi-main.jpg\"],\n      \"distanceKm\": null,\n      \"rating\": 4.5,\n      \"reviewCount\": 8,\n      \"isOpenNow\": true,\n      \"openingHoursText\": \"Closes at 22:00\",\n      \"priceText\": \"₦400/kWh\",\n      \"statusSummary\": \"AVAILABLE\",\n      \"portsAvailableCount\": 2,\n      \"portsTotalCount\": 4,\n      \"connectors\": [\n        { \"type\": \"CCS2\",  \"powerKw\": 120, \"count\": 2 },\n        { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n      ],\n      \"amenities\": [\"restrooms\", \"wifi\", \"food\", \"shopping\"],\n      \"updatedAt\": \"2026-02-18T09:00:00.000Z\",\n      \"isFavorite\": true\n    }\n  ],\n  \"nextCursor\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Nearby Stations",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/stations/nearby?lat=6.4281&lng=3.4219&radiusKm=10&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["stations", "nearby"],
+              "query": [
+                { "key": "lat",         "value": "6.4281",    "description": "Latitude (required)" },
+                { "key": "lng",         "value": "3.4219",    "description": "Longitude (required)" },
+                { "key": "radiusKm",    "value": "10",        "disabled": true, "description": "Search radius in km (default 10)" },
+                { "key": "limit",       "value": "20",        "disabled": true, "description": "Max results per page (default 20, max 50)" },
+                { "key": "connectors",  "value": "CCS2,TYPE_2", "disabled": true, "description": "Filter by connector types (comma-separated)" },
+                { "key": "openNow",     "value": "true",      "disabled": true, "description": "Only show currently open stations" },
+                { "key": "minPowerKw",  "value": "50",        "disabled": true, "description": "Minimum port power in kW" },
+                { "key": "cursor",      "value": "",          "disabled": true, "description": "Pagination cursor (offset number from previous response)" }
+              ]
+            },
+            "description": "Returns stations within `radiusKm` of the given coordinates, sorted by distance. If the user has a primary vehicle, stations are pre-filtered to matching connector types (unless `connectors` is explicitly provided)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"stations\": [\n    {\n      \"id\": \"uuid-station-1\",\n      \"name\": \"CHRGE Lekki Phase 1\",\n      \"address\": \"12 Admiralty Way, Lekki Phase 1\",\n      \"area\": \"Lekki Phase 1\",\n      \"city\": \"Lagos\",\n      \"lat\": 6.4281,\n      \"lng\": 3.4219,\n      \"heroImageUrl\": \"https://chrge.ng/stations/lekki-1-main.jpg\",\n      \"images\": [\n        \"https://chrge.ng/stations/lekki-1-main.jpg\",\n        \"https://chrge.ng/stations/lekki-1-chargers.jpg\"\n      ],\n      \"distanceKm\": 0.0,\n      \"rating\": 4.8,\n      \"reviewCount\": 12,\n      \"isOpenNow\": true,\n      \"openingHoursText\": \"Open 24/7\",\n      \"priceText\": \"₦350/kWh + ₦500 session\",\n      \"statusSummary\": \"AVAILABLE\",\n      \"portsAvailableCount\": 4,\n      \"portsTotalCount\": 5,\n      \"connectors\": [\n        { \"type\": \"CCS2\",  \"powerKw\": 150, \"count\": 3 },\n        { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n      ],\n      \"amenities\": [\"restrooms\", \"wifi\", \"security\", \"cctv\", \"lighting\"],\n      \"updatedAt\": \"2026-02-18T09:00:00.000Z\",\n      \"isFavorite\": false\n    }\n  ],\n  \"nextCursor\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Top Picks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/stations/top-picks?lat=6.4281&lng=3.4219&limit=4",
+              "host": ["{{baseUrl}}"],
+              "path": ["stations", "top-picks"],
+              "query": [
+                { "key": "lat",   "value": "6.4281", "description": "Latitude (required)" },
+                { "key": "lng",   "value": "3.4219", "description": "Longitude (required)" },
+                { "key": "limit", "value": "4",      "disabled": true, "description": "Number of picks (default 4)" }
+              ]
+            },
+            "description": "Returns a curated shortlist scored by: verified status, available ports, rating, and proximity. Same card shape as Nearby Stations."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"uuid-station-1\",\n    \"name\": \"CHRGE Lekki Phase 1\",\n    \"address\": \"12 Admiralty Way, Lekki Phase 1\",\n    \"area\": \"Lekki Phase 1\",\n    \"city\": \"Lagos\",\n    \"lat\": 6.4281,\n    \"lng\": 3.4219,\n    \"heroImageUrl\": \"https://chrge.ng/stations/lekki-1-main.jpg\",\n    \"images\": [\"https://chrge.ng/stations/lekki-1-main.jpg\"],\n    \"distanceKm\": 0.0,\n    \"rating\": 4.8,\n    \"reviewCount\": 12,\n    \"isOpenNow\": true,\n    \"openingHoursText\": \"Open 24/7\",\n    \"priceText\": \"₦350/kWh + ₦500 session\",\n    \"statusSummary\": \"AVAILABLE\",\n    \"portsAvailableCount\": 4,\n    \"portsTotalCount\": 5,\n    \"connectors\": [\n      { \"type\": \"CCS2\",  \"powerKw\": 150, \"count\": 3 },\n      { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n    ],\n    \"amenities\": [\"restrooms\", \"wifi\", \"security\"],\n    \"updatedAt\": \"2026-02-18T09:00:00.000Z\",\n    \"isFavorite\": true\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get Station Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}", "disabled": true }],
+            "url": {
+              "raw": "{{baseUrl}}/stations/{{stationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["stations", "{{stationId}}"]
+            },
+            "description": "Full station detail including all ports, images, network info, and operating hours. Auth is optional — pass token to get `isFavorite` status."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"uuid-station-1\",\n  \"name\": \"CHRGE Lekki Phase 1\",\n  \"description\": \"Premium fast charging station in the heart of Lekki Phase 1.\",\n  \"address\": \"12 Admiralty Way, Lekki Phase 1\",\n  \"area\": \"Lekki Phase 1\",\n  \"city\": \"Lagos\",\n  \"state\": \"Lagos\",\n  \"postalCode\": null,\n  \"country\": \"NG\",\n  \"latitude\": 6.4281,\n  \"longitude\": 3.4219,\n  \"lat\": 6.4281,\n  \"lng\": 3.4219,\n  \"isOpenNow\": true,\n  \"openingHoursText\": \"Open 24/7\",\n  \"operatingHours\": null,\n  \"amenities\": [\"restrooms\", \"wifi\", \"security\", \"cctv\", \"lighting\"],\n  \"priceText\": \"₦350/kWh + ₦500 session\",\n  \"pricing\": { \"perKwh\": 350, \"sessionFee\": 500, \"currency\": \"NGN\" },\n  \"phoneNumber\": \"+234 812 345 6789\",\n  \"network\": {\n    \"id\": \"net-uuid-1\",\n    \"name\": \"CHRGE\",\n    \"logoUrl\": null,\n    \"website\": \"https://chrge.ng\",\n    \"phoneNumber\": null\n  },\n  \"images\": [\n    { \"id\": \"img-1\", \"url\": \"https://chrge.ng/stations/lekki-1-main.jpg\",     \"caption\": \"CHRGE Lekki Phase 1 Station\" },\n    { \"id\": \"img-2\", \"url\": \"https://chrge.ng/stations/lekki-1-chargers.jpg\", \"caption\": \"Fast charging bays\" }\n  ],\n  \"ports\": [\n    {\n      \"id\": \"port-uuid-1\",\n      \"connectorType\": \"CCS2\",\n      \"chargerType\": \"DCFC\",\n      \"powerKw\": 150,\n      \"status\": \"AVAILABLE\",\n      \"portNumber\": \"A1\",\n      \"pricing\": { \"perKwh\": null, \"perMinute\": null, \"sessionFee\": null },\n      \"estimatedAvailableAt\": null,\n      \"minutesRemaining\": null\n    },\n    {\n      \"id\": \"port-uuid-2\",\n      \"connectorType\": \"CCS2\",\n      \"chargerType\": \"DCFC\",\n      \"powerKw\": 150,\n      \"status\": \"IN_USE\",\n      \"portNumber\": \"A2\",\n      \"pricing\": { \"perKwh\": null, \"perMinute\": null, \"sessionFee\": null },\n      \"estimatedAvailableAt\": \"2026-02-18T10:30:00.000Z\",\n      \"minutesRemaining\": 12\n    }\n  ],\n  \"totalPorts\": 5,\n  \"availablePorts\": 4,\n  \"rating\": 4.8,\n  \"reviewCount\": 12,\n  \"statusSummary\": \"AVAILABLE\",\n  \"portsAvailableCount\": 4,\n  \"portsTotalCount\": 5,\n  \"connectors\": [\n    { \"type\": \"CCS2\",  \"powerKw\": 150, \"count\": 3 },\n    { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n  ],\n  \"isFavorite\": false,\n  \"isVerified\": true,\n  \"lastStatusUpdate\": \"2026-02-18T09:00:00.000Z\",\n  \"updatedAt\": \"2026-02-18T09:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Station Reviews",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/stations/{{stationId}}/reviews?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["stations", "{{stationId}}", "reviews"],
+              "query": [
+                { "key": "limit",  "value": "10", "disabled": true, "description": "Reviews per page (default 10)" },
+                { "key": "cursor", "value": "",   "disabled": true, "description": "ISO date string cursor from previous response" }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"reviews\": [\n    {\n      \"id\": \"rev-uuid-1\",\n      \"rating\": 5,\n      \"comment\": \"Great charging station! Fast and reliable.\",\n      \"createdAt\": \"2026-02-18T08:00:00.000Z\",\n      \"user\": {\n        \"id\": \"cm8abc123\",\n        \"name\": \"John Doe\",\n        \"avatarUrl\": null\n      }\n    }\n  ],\n  \"nextCursor\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create / Update Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Great charging station with fast speeds!\"\n}"
+            },
+            "url": "{{baseUrl}}/stations/{{stationId}}/reviews",
+            "description": "Upsert — creates a new review or updates an existing one for this station. `rating` is 1–5. `comment` is optional."
+          }
+        },
+        {
+          "name": "Add to Favorites",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/stations/{{stationId}}/favorite",
+            "description": "Saves the station and returns the full station detail with `isFavorite: true`. Use the returned object to update local state — no separate GET needed."
+          },
+          "response": [
+            {
+              "name": "200 OK — station with isFavorite: true",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"uuid-station-1\",\n  \"name\": \"CHRGE Lekki Phase 1\",\n  \"isFavorite\": true,\n  \"...\": \"(full station detail shape)\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remove from Favorites",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/stations/{{stationId}}/favorite",
+            "description": "Unsaves the station and returns the full station detail with `isFavorite: false`. Use the returned object to update local state — no separate GET needed."
+          },
+          "response": [
+            {
+              "name": "200 OK — station with isFavorite: false",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"uuid-station-1\",\n  \"name\": \"CHRGE Lekki Phase 1\",\n  \"isFavorite\": false,\n  \"...\": \"(full station detail shape)\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Favorites",
+      "description": "Retrieve the authenticated user's saved stations. Same card shape as Nearby Stations.",
+      "item": [
+        {
+          "name": "Get My Favorites",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/favorites"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"id\": \"uuid-station-1\",\n    \"name\": \"CHRGE Lekki Phase 1\",\n    \"address\": \"12 Admiralty Way, Lekki Phase 1\",\n    \"area\": \"Lekki Phase 1\",\n    \"city\": \"Lagos\",\n    \"lat\": 6.4281,\n    \"lng\": 3.4219,\n    \"heroImageUrl\": \"https://chrge.ng/stations/lekki-1-main.jpg\",\n    \"images\": [\"https://chrge.ng/stations/lekki-1-main.jpg\"],\n    \"distanceKm\": null,\n    \"rating\": 4.8,\n    \"reviewCount\": 12,\n    \"isOpenNow\": true,\n    \"openingHoursText\": \"Open 24/7\",\n    \"priceText\": \"₦350/kWh + ₦500 session\",\n    \"statusSummary\": \"AVAILABLE\",\n    \"portsAvailableCount\": 4,\n    \"portsTotalCount\": 5,\n    \"connectors\": [\n      { \"type\": \"CCS2\",  \"powerKw\": 150, \"count\": 3 },\n      { \"type\": \"TYPE2\", \"powerKw\": 22,  \"count\": 2 }\n    ],\n    \"amenities\": [\"restrooms\", \"wifi\", \"security\"],\n    \"updatedAt\": \"2026-02-18T09:00:00.000Z\",\n    \"isFavorite\": true\n  }\n]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Station Submissions",
+      "description": "Allows any authenticated user to submit a new charging station and track their submissions. When `SKIP_STATION_APPROVAL=true` (early phase), stations go live immediately. Otherwise they are `PENDING` until an admin approves them.",
+      "item": [
+        {
+          "name": "Submit Station",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.id) pm.collectionVariables.set('stationId', res.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Charging Hub Yaba\",\n  \"description\": \"Community charging station near Yaba tech cluster\",\n  \"address\": \"14 Herbert Macaulay Way\",\n  \"area\": \"Yaba\",\n  \"city\": \"Lagos\",\n  \"state\": \"Lagos\",\n  \"country\": \"NG\",\n  \"latitude\": 6.5095,\n  \"longitude\": 3.3711,\n  \"timezone\": \"Africa/Lagos\",\n  \"amenities\": [\"parking\", \"security\"],\n  \"pricing\": { \"perKwh\": 300, \"currency\": \"NGN\" },\n  \"phoneNumber\": \"+234 801 234 5678\",\n  \"ports\": [\n    {\n      \"connectorType\": \"TYPE_2\",\n      \"chargerType\": \"LEVEL2\",\n      \"powerKw\": 22,\n      \"portNumber\": \"A1\",\n      \"pricePerKwh\": 300\n    },\n    {\n      \"connectorType\": \"CCS2\",\n      \"chargerType\": \"DCFC\",\n      \"powerKw\": 50,\n      \"portNumber\": \"B1\"\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/stations/submit",
+            "description": "Submit a new charging station. Any logged-in user can submit. Include `ports` array to add connectors inline — you can also add them later via the admin ports endpoint.\n\nWhen `SKIP_STATION_APPROVAL=true` (early phase default), the station is immediately `APPROVED` and `isActive: true`. In production, it starts as `PENDING` and requires admin review."
+          },
+          "response": [
+            {
+              "name": "201 Created — station live (SKIP_APPROVAL=true)",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"uuid-new-station\",\n    \"name\": \"My Charging Hub Yaba\",\n    \"address\": \"14 Herbert Macaulay Way\",\n    \"area\": \"Yaba\",\n    \"city\": \"Lagos\",\n    \"state\": \"Lagos\",\n    \"country\": \"NG\",\n    \"lat\": 6.5095,\n    \"lng\": 3.3711,\n    \"isActive\": true,\n    \"isVerified\": false,\n    \"status\": \"APPROVED\",\n    \"submittedBy\": \"uuid-user\",\n    \"rejectionReason\": null,\n    \"ports\": [\n      { \"id\": \"uuid-port-1\", \"connectorType\": \"TYPE_2\", \"chargerType\": \"LEVEL2\", \"powerKw\": 22, \"status\": \"UNKNOWN\", \"portNumber\": \"A1\" },\n      { \"id\": \"uuid-port-2\", \"connectorType\": \"CCS2\",   \"chargerType\": \"DCFC\",   \"powerKw\": 50, \"status\": \"UNKNOWN\", \"portNumber\": \"B1\" }\n    ],\n    \"isFavorite\": false\n  }\n}"
+            },
+            {
+              "name": "201 Created — station pending (SKIP_APPROVAL=false)",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"uuid-new-station\",\n    \"name\": \"My Charging Hub Yaba\",\n    \"isActive\": false,\n    \"isVerified\": false,\n    \"status\": \"PENDING\",\n    \"submittedBy\": \"uuid-user\",\n    \"rejectionReason\": null\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get My Submissions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/stations/my-submissions",
+            "description": "Returns all stations submitted by the current user, ordered newest first. Each item includes a `status` field (`PENDING`, `APPROVED`, or `REJECTED`) so the user can track their submission."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"stations\": [\n      {\n        \"id\": \"uuid-new-station\",\n        \"name\": \"My Charging Hub Yaba\",\n        \"address\": \"14 Herbert Macaulay Way\",\n        \"area\": \"Yaba\",\n        \"city\": \"Lagos\",\n        \"lat\": 6.5095,\n        \"lng\": 3.3711,\n        \"heroImageUrl\": null,\n        \"images\": [],\n        \"distanceKm\": null,\n        \"rating\": null,\n        \"reviewCount\": 0,\n        \"isOpenNow\": true,\n        \"openingHoursText\": \"Open 24/7\",\n        \"priceText\": \"₦300/kWh\",\n        \"statusSummary\": \"OUT_OF_SERVICE\",\n        \"portsAvailableCount\": 0,\n        \"portsTotalCount\": 2,\n        \"connectors\": [\n          { \"type\": \"TYPE_2\", \"powerKw\": 22, \"count\": 1 },\n          { \"type\": \"CCS2\",   \"powerKw\": 50, \"count\": 1 }\n        ],\n        \"amenities\": [\"parking\", \"security\"],\n        \"updatedAt\": \"2026-02-18T12:00:00.000Z\",\n        \"isFavorite\": false,\n        \"status\": \"APPROVED\"\n      }\n    ],\n    \"nextCursor\": null\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "Admin-only endpoints. Requires a JWT with `role: ADMIN`. Use these to manage stations, approve/reject submissions, and manage vehicle data.",
+      "item": [
+        {
+          "name": "Review Station (Approve / Reject)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/stations/{{stationId}}/review",
+            "description": "Approve or reject a user-submitted station. Requires `role: ADMIN`.\n\n- `APPROVE` → sets `isActive: true`, `isVerified: true`, `status: APPROVED`\n- `REJECT` → sets `isActive: false`, `status: REJECTED`, stores `rejectionReason`\n\nExample reject body:\n```json\n{ \"action\": \"REJECT\", \"rejectionReason\": \"Location could not be verified\" }\n```"
+          },
+          "response": [
+            {
+              "name": "200 OK — approved",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"uuid-station\",\n    \"name\": \"My Charging Hub Yaba\",\n    \"isActive\": true,\n    \"isVerified\": true,\n    \"status\": \"APPROVED\",\n    \"rejectionReason\": null\n  }\n}"
+            },
+            {
+              "name": "200 OK — rejected",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"uuid-station\",\n    \"name\": \"My Charging Hub Yaba\",\n    \"isActive\": false,\n    \"isVerified\": false,\n    \"status\": \"REJECTED\",\n    \"rejectionReason\": \"Location could not be verified\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Service health checks.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health/live"
+          }
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health/ready"
+          }
+        }
+      ]
+    }
+  ]
+}

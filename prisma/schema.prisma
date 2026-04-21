@@ -6,8 +6,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // In production (Neon): DATABASE_URL = pooled URL, DIRECT_URL = direct URL.
+  // In local dev: both vars point to the same Docker Postgres instance.
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================================
@@ -32,7 +35,8 @@ enum ConnectorType {
   CHADEMO
   TESLA
   J1772
-  TYPE2
+  TYPE_2      // Type 2 (Mennekes) AC - matches frontend
+  TYPE2       // Legacy (ports may use this)
   NACS
   GB_T        // Chinese standard
 }
@@ -48,6 +52,18 @@ enum ChargerType {
   LEVEL1
   LEVEL2
   DCFC
+}
+
+enum PowertrainType {
+  BEV   // Battery electric
+  PHEV  // Plug-in hybrid
+  EREV  // Extended-range electric
+}
+
+enum StationStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 // ============================================================================
@@ -71,10 +87,11 @@ model User {
   deletedAt     DateTime?    // Soft delete
 
   // Relations
-  refreshTokens RefreshToken[]
-  userVehicles  UserVehicle[]
-  favorites     Favorite[]
-  reviews       Review[]
+  refreshTokens     RefreshToken[]
+  userVehicles      UserVehicle[]
+  favorites         Favorite[]
+  reviews           Review[]
+  submittedStations Station[]     @relation("SubmittedStations")
 
   @@index([email])
   @@index([providerId])
@@ -105,9 +122,10 @@ model RefreshToken {
 // ============================================================================
 
 model VehicleBrand {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  logoUrl   String?
+  id        String   @id  // Stable id for frontend (e.g. "tesla", "audi") — images resolved in frontend
+  name      String
+  logoUrl   String?  // Optional; frontend can resolve by id
+  darkLogo  Boolean? @default(false)  // Prefer dark logo variant
   country   String?  // Country of origin
   isActive  Boolean  @default(true)
   
@@ -122,15 +140,17 @@ model VehicleBrand {
 }
 
 model VehicleModel {
-  id              String        @id @default(uuid())
+  id              String         @id  // Stable id for frontend (e.g. "model-s", "q4-etron")
   brandId         String
   name            String
-  year            Int?          // Model year if specific
-  connectorType   ConnectorType // Inferred connector for this model
+  powertrain      PowertrainType // BEV, PHEV, EREV
+  connectors      Json           // Array of ConnectorType strings, e.g. ["NACS", "CCS2"]
+  connectorType   ConnectorType? // Optional legacy single connector (first of connectors)
+  year            Int?           // Model year if specific
   batteryCapacityKwh Float?
-  rangeKm         Float?        // Estimated range
-  imageUrl        String?
-  isActive        Boolean       @default(true)
+  rangeKm         Float?         // Estimated range
+  imageUrl        String?        // Optional; frontend can resolve by id
+  isActive        Boolean        @default(true)
   
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -139,7 +159,7 @@ model VehicleModel {
   brand        VehicleBrand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
   userVehicles UserVehicle[]
 
-  @@unique([brandId, name, year])
+  @@unique([brandId, name])
   @@index([brandId])
   @@index([connectorType])
   @@map("vehicle_models")
@@ -194,6 +214,7 @@ model Station {
   
   // Location
   address         String
+  area            String?   // Neighbourhood / district (e.g. "Victoria Island", "Lekki")
   city            String
   state           String
   postalCode      String?
@@ -203,8 +224,13 @@ model Station {
   timezone        String    @default("Africa/Lagos")
   
   // Status
-  isActive        Boolean   @default(true)
-  isVerified      Boolean   @default(false)  // Admin verified
+  isActive        Boolean       @default(true)
+  isVerified      Boolean       @default(false)  // Admin verified
+  status          StationStatus @default(PENDING)
+  
+  // Submission tracking
+  submittedBy     String?       // FK → User.id (null for seeded/admin-created stations)
+  rejectionReason String?       // Set when status = REJECTED
   
   // Operating Hours (JSON: { "mon": { "open": "08:00", "close": "22:00" }, ... } or null for 24h)
   // Use "24h" as special value for always open
@@ -233,11 +259,12 @@ model Station {
   deletedAt       DateTime?
 
   // Relations
-  network   Network?       @relation(fields: [networkId], references: [id])
-  ports     Port[]
-  favorites Favorite[]
-  reviews   Review[]
-  images    StationImage[]
+  network    Network?       @relation(fields: [networkId], references: [id])
+  submitter  User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
+  ports      Port[]
+  favorites  Favorite[]
+  reviews    Review[]
+  images     StationImage[]
 
   @@index([networkId])
   @@index([latitude, longitude])

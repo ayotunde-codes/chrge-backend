@@ -12,6 +12,9 @@ export class VehicleBrandResponseDto {
 
   @ApiPropertyOptional({ example: 'USA' })
   country: string | null;
+
+  @ApiPropertyOptional({ example: false, description: 'Prefer dark logo variant' })
+  darkLogo: boolean | null;
 }
 
 

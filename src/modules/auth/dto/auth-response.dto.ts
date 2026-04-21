@@ -22,6 +22,12 @@ export class AuthResponseDto {
     example: 900,
   })
   expiresIn: number;
+
+  @ApiProperty({
+    description: 'True when this is a brand-new account — use to redirect to onboarding',
+    example: false,
+  })
+  isNewUser: boolean;
 }
 
 

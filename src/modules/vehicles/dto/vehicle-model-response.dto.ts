@@ -1,20 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class VehicleModelResponseDto {
-  @ApiProperty({ example: 'uuid' })
+  @ApiProperty({ example: 'model-3' })
   id: string;
 
-  @ApiProperty({ example: 'uuid' })
+  @ApiProperty({ example: 'tesla' })
   brandId: string;
 
-  @ApiProperty({ example: 'Model 3 Long Range' })
+  @ApiProperty({ example: 'Model 3' })
   name: string;
+
+  @ApiProperty({ example: 'BEV', enum: ['BEV', 'PHEV', 'EREV'] })
+  powertrain: string;
+
+  @ApiProperty({ example: ['NACS', 'CCS2'], description: 'Supported connector types' })
+  connectors: string[];
+
+  @ApiPropertyOptional({ example: 'CCS2', description: 'Legacy single connector (first of connectors)' })
+  connectorType: string | null;
 
   @ApiPropertyOptional({ example: 2024 })
   year: number | null;
-
-  @ApiProperty({ example: 'CCS2', enum: ['CCS1', 'CCS2', 'CHADEMO', 'TESLA', 'J1772', 'TYPE2', 'NACS', 'GB_T'] })
-  connectorType: string;
 
   @ApiPropertyOptional({ example: 82 })
   batteryCapacityKwh: number | null;

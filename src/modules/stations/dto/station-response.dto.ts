@@ -1,8 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ============================================================================
-// STATION CARD (for lists)
+// STATION CARD (for lists) — matches frontend Station type
 // ============================================================================
+
+class ConnectorSummaryDto {
+  @ApiProperty({ example: 'CCS2' })
+  type: string;
+
+  @ApiProperty({ example: 150 })
+  powerKw: number;
+
+  @ApiProperty({ example: 4 })
+  count: number;
+}
 
 export class StationCardResponseDto {
   @ApiProperty({ example: 'uuid' })
@@ -11,26 +22,51 @@ export class StationCardResponseDto {
   @ApiProperty({ example: 'Lekki Phase 1 Supercharger' })
   name: string;
 
-  @ApiProperty({ example: 'Lekki, Lagos' })
-  cityAreaLabel: string;
+  @ApiProperty({ example: '123 Admiralty Way' })
+  address: string;
 
-  @ApiPropertyOptional({ example: 2.5, description: 'Distance in km from query location' })
-  distanceKm: number | null;
+  @ApiPropertyOptional({ example: 'Lekki', description: 'Neighbourhood / district' })
+  area: string | null;
+
+  @ApiProperty({ example: 'Lagos' })
+  city: string;
+
+  @ApiProperty({ example: 6.4478, description: 'Latitude' })
+  lat: number;
+
+  @ApiProperty({ example: 3.4723, description: 'Longitude' })
+  lng: number;
 
   @ApiPropertyOptional({ example: 'https://example.com/station.jpg' })
   heroImageUrl: string | null;
 
+  @ApiProperty({ type: [String], example: ['https://example.com/img1.jpg'] })
+  images: string[];
+
+  @ApiPropertyOptional({ example: 2.5, description: 'Distance in km from query location' })
+  distanceKm: number | null;
+
+  @ApiPropertyOptional({ example: 4.5 })
+  rating: number | null;
+
+  @ApiProperty({ example: 12 })
+  reviewCount: number;
+
   @ApiProperty({ example: true })
   isOpenNow: boolean;
 
-  @ApiPropertyOptional({ example: '₦350/kWh + ₦500 session' })
-  priceSummary: string | null;
+  @ApiProperty({ example: 'Open 24/7', description: 'Human-readable opening hours text' })
+  openingHoursText: string;
 
-  @ApiProperty({ example: 'CCS2, TYPE2' })
-  connectorsSummary: string;
+  @ApiPropertyOptional({ example: '₦350/kWh', description: 'Human-readable price text' })
+  priceText: string | null;
 
-  @ApiPropertyOptional({ example: 150 })
-  maxPowerKw: number | null;
+  @ApiProperty({
+    example: 'AVAILABLE',
+    enum: ['AVAILABLE', 'IN_USE', 'OUT_OF_SERVICE'],
+    description: 'Overall station availability status',
+  })
+  statusSummary: string;
 
   @ApiProperty({ example: 3 })
   portsAvailableCount: number;
@@ -38,20 +74,17 @@ export class StationCardResponseDto {
   @ApiProperty({ example: 6 })
   portsTotalCount: number;
 
-  @ApiProperty({ example: '3/6 available' })
-  statusSummary: string;
+  @ApiProperty({ type: [ConnectorSummaryDto] })
+  connectors: ConnectorSummaryDto[];
 
-  @ApiPropertyOptional({ example: 4.5 })
-  avgRating: number | null;
+  @ApiProperty({ type: [String], example: ['Cafe', 'WiFi', 'Restroom'] })
+  amenities: string[];
 
-  @ApiProperty({ example: 12 })
-  reviewCount: number;
+  @ApiPropertyOptional()
+  updatedAt: string | null;
 
   @ApiProperty({ example: false })
   isFavorite: boolean;
-
-  @ApiPropertyOptional()
-  updatedAt: Date | null;
 }
 
 export class StationListResponseDto {
@@ -192,7 +225,10 @@ export class StationDetailResponseDto {
   @ApiProperty({ example: '123 Admiralty Way' })
   address: string;
 
-  @ApiProperty({ example: 'Lekki' })
+  @ApiPropertyOptional({ example: 'Lekki', description: 'Neighbourhood / district' })
+  area: string | null;
+
+  @ApiProperty({ example: 'Lagos' })
   city: string;
 
   @ApiProperty({ example: 'Lagos' })
@@ -204,20 +240,32 @@ export class StationDetailResponseDto {
   @ApiProperty({ example: 'NG' })
   country: string;
 
-  @ApiProperty({ example: 6.4541 })
+  @ApiProperty({ example: 6.4541, description: 'Latitude (also exposed as lat)' })
   latitude: number;
 
-  @ApiProperty({ example: 3.4725 })
+  @ApiProperty({ example: 3.4725, description: 'Longitude (also exposed as lng)' })
   longitude: number;
+
+  @ApiProperty({ example: 6.4541 })
+  lat: number;
+
+  @ApiProperty({ example: 3.4725 })
+  lng: number;
 
   @ApiProperty({ example: true })
   isOpenNow: boolean;
 
+  @ApiProperty({ example: 'Open 24/7' })
+  openingHoursText: string;
+
   @ApiPropertyOptional({ type: OperatingHoursDto })
   operatingHours: OperatingHoursDto | null;
 
-  @ApiProperty({ example: ['restrooms', 'wifi', 'food'], type: [String] })
+  @ApiProperty({ example: ['Cafe', 'WiFi', 'Restroom'], type: [String] })
   amenities: string[];
+
+  @ApiPropertyOptional({ example: '₦350/kWh' })
+  priceText: string | null;
 
   @ApiPropertyOptional({ type: StationPricingDto })
   pricing: StationPricingDto | null;
@@ -241,10 +289,25 @@ export class StationDetailResponseDto {
   availablePorts: number;
 
   @ApiPropertyOptional({ example: 4.5 })
-  avgRating: number | null;
+  rating: number | null;
 
   @ApiProperty({ example: 12 })
   reviewCount: number;
+
+  @ApiProperty({
+    example: 'AVAILABLE',
+    enum: ['AVAILABLE', 'IN_USE', 'OUT_OF_SERVICE'],
+  })
+  statusSummary: string;
+
+  @ApiProperty({ example: 3 })
+  portsAvailableCount: number;
+
+  @ApiProperty({ example: 6 })
+  portsTotalCount: number;
+
+  @ApiProperty({ type: [ConnectorSummaryDto] })
+  connectors: ConnectorSummaryDto[];
 
   @ApiProperty({ example: false })
   isFavorite: boolean;
@@ -254,6 +317,22 @@ export class StationDetailResponseDto {
 
   @ApiPropertyOptional()
   lastStatusUpdate: Date | null;
+
+  @ApiPropertyOptional()
+  updatedAt: string | null;
+
+  @ApiProperty({
+    example: 'APPROVED',
+    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    description: 'Submission approval status',
+  })
+  status: string;
+
+  @ApiPropertyOptional({ example: 'uuid', description: 'User ID who submitted this station' })
+  submittedBy: string | null;
+
+  @ApiPropertyOptional({ example: 'Location could not be verified', description: 'Reason if rejected' })
+  rejectionReason: string | null;
 }
 
 // ============================================================================

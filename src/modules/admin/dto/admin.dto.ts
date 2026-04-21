@@ -15,13 +15,18 @@ import {
   IsDateString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { ConnectorType, ChargerType, PortStatus } from '@prisma/client';
+import { ConnectorType, ChargerType, PortStatus, PowertrainType } from '@prisma/client';
 
 // ============================================================================
 // VEHICLE BRAND DTOs
 // ============================================================================
 
 export class CreateVehicleBrandDto {
+  @ApiProperty({ example: 'tesla', description: 'Stable id for frontend (e.g. tesla, audi)' })
+  @IsString()
+  @MaxLength(50)
+  id: string;
+
   @ApiProperty({ example: 'Tesla' })
   @IsString()
   @MaxLength(100)
@@ -31,6 +36,11 @@ export class CreateVehicleBrandDto {
   @IsOptional()
   @IsUrl()
   logoUrl?: string;
+
+  @ApiPropertyOptional({ example: false, description: 'Prefer dark logo variant' })
+  @IsOptional()
+  @IsBoolean()
+  darkLogo?: boolean;
 
   @ApiPropertyOptional({ example: 'USA' })
   @IsOptional()
@@ -48,6 +58,7 @@ export class VehicleBrandResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
   @ApiPropertyOptional() logoUrl: string | null;
+  @ApiPropertyOptional() darkLogo: boolean | null;
   @ApiPropertyOptional() country: string | null;
   @ApiProperty() isActive: boolean;
   @ApiProperty() createdAt: Date;
@@ -58,14 +69,28 @@ export class VehicleBrandResponseDto {
 // ============================================================================
 
 export class CreateVehicleModelDto {
-  @ApiProperty({ example: 'uuid' })
-  @IsUUID()
+  @ApiProperty({ example: 'model-3', description: 'Stable id for frontend' })
+  @IsString()
+  @MaxLength(80)
+  id: string;
+
+  @ApiProperty({ example: 'tesla' })
+  @IsString()
   brandId: string;
 
-  @ApiProperty({ example: 'Model 3 Long Range' })
+  @ApiProperty({ example: 'Model 3' })
   @IsString()
   @MaxLength(100)
   name: string;
+
+  @ApiProperty({ example: 'BEV', enum: PowertrainType })
+  @IsEnum(PowertrainType)
+  powertrain: PowertrainType;
+
+  @ApiProperty({ example: ['NACS', 'CCS2'], description: 'Supported connector types', enum: ConnectorType, isArray: true })
+  @IsArray()
+  @IsEnum(ConnectorType, { each: true })
+  connectors: ConnectorType[];
 
   @ApiPropertyOptional({ example: 2024 })
   @IsOptional()
@@ -73,10 +98,6 @@ export class CreateVehicleModelDto {
   @Min(1990)
   @Max(2100)
   year?: number;
-
-  @ApiProperty({ example: 'CCS2', enum: ConnectorType })
-  @IsEnum(ConnectorType)
-  connectorType: ConnectorType;
 
   @ApiPropertyOptional({ example: 82 })
   @IsOptional()
@@ -105,8 +126,10 @@ export class VehicleModelResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() brandId: string;
   @ApiProperty() name: string;
+  @ApiProperty() powertrain: string;
+  @ApiProperty() connectors: string[];
+  @ApiPropertyOptional() connectorType: string | null;
   @ApiPropertyOptional() year: number | null;
-  @ApiProperty() connectorType: string;
   @ApiPropertyOptional() batteryCapacityKwh: number | null;
   @ApiPropertyOptional() rangeKm: number | null;
   @ApiPropertyOptional() imageUrl: string | null;

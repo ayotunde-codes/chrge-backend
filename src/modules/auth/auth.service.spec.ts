@@ -122,6 +122,7 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('user');
       expect(result).toHaveProperty('accessToken', mockTokens.accessToken);
       expect(result).toHaveProperty('refreshToken', mockTokens.refreshToken);
+      expect(result).toHaveProperty('isNewUser', true);
     });
 
     it('should throw ConflictException if email already exists', async () => {
@@ -167,6 +168,7 @@ describe('AuthService', () => {
       expect(argon2.verify).toHaveBeenCalledWith(mockUser.passwordHash, loginDto.password);
       expect(mockTokenService.generateTokens).toHaveBeenCalledWith(mockUser, mockRequestMeta);
       expect(result).toHaveProperty('accessToken', mockTokens.accessToken);
+      expect(result).toHaveProperty('isNewUser', false);
     });
 
     it('should throw UnauthorizedException if user not found', async () => {
@@ -239,9 +241,10 @@ describe('AuthService', () => {
         }),
       });
       expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('isNewUser', true);
     });
 
-    it('should link Google to existing email user', async () => {
+    it('should link Google to existing email user and sync profile', async () => {
       const existingEmailUser = {
         ...mockUser,
         provider: AuthProvider.EMAIL,
@@ -252,6 +255,9 @@ describe('AuthService', () => {
         ...existingEmailUser,
         provider: AuthProvider.GOOGLE,
         providerId: googleUserInfo.sub,
+        firstName: googleUserInfo.given_name,
+        lastName: googleUserInfo.family_name,
+        avatarUrl: googleUserInfo.picture,
       });
       mockTokenService.generateTokens.mockResolvedValue(mockTokens);
 
@@ -263,25 +269,43 @@ describe('AuthService', () => {
           provider: AuthProvider.GOOGLE,
           providerId: googleUserInfo.sub,
           emailVerified: true,
+          firstName: googleUserInfo.given_name,
+          lastName: googleUserInfo.family_name,
+          avatarUrl: googleUserInfo.picture,
         }),
       });
     });
 
-    it('should login existing Google user', async () => {
+    it('should login existing Google user and sync profile from Google', async () => {
       const existingGoogleUser = {
         ...mockUser,
         provider: AuthProvider.GOOGLE,
         providerId: googleUserInfo.sub,
       };
+      const updatedUser = {
+        ...existingGoogleUser,
+        firstName: googleUserInfo.given_name,
+        lastName: googleUserInfo.family_name,
+        avatarUrl: googleUserInfo.picture,
+      };
       mockGoogleAuthService.verifyIdToken.mockResolvedValue(googleUserInfo);
       mockPrismaService.user.findFirst.mockResolvedValue(existingGoogleUser);
+      mockPrismaService.user.update.mockResolvedValue(updatedUser);
       mockTokenService.generateTokens.mockResolvedValue(mockTokens);
 
       const result = await service.googleLogin(googleLoginDto, mockRequestMeta);
 
-      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: existingGoogleUser.id },
+        data: {
+          firstName: googleUserInfo.given_name,
+          lastName: googleUserInfo.family_name,
+          avatarUrl: googleUserInfo.picture,
+        },
+      });
       expect(mockPrismaService.user.create).not.toHaveBeenCalled();
       expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('isNewUser', false);
     });
 
     it('should throw UnauthorizedException if Google user is deactivated', async () => {

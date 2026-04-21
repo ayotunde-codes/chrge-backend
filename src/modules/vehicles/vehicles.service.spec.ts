@@ -37,11 +37,13 @@ describe('VehiclesService', () => {
   };
 
   const mockModel = {
-    id: 'model-123',
-    brandId: 'brand-123',
+    id: 'model-3',
+    brandId: 'tesla',
     name: 'Model 3',
-    year: 2024,
+    powertrain: 'BEV',
+    connectors: ['CCS2'],
     connectorType: ConnectorType.CCS2,
+    year: 2024,
     batteryCapacityKwh: 75,
     imageUrl: 'https://example.com/model3.png',
     isActive: true,
@@ -53,7 +55,7 @@ describe('VehiclesService', () => {
   const mockUserVehicle = {
     id: 'user-vehicle-123',
     userId: 'user-123',
-    modelId: 'model-123',
+    modelId: 'model-3',
     nickname: 'My Tesla',
     isPrimary: true,
     createdAt: new Date(),

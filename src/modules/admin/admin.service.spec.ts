@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
-import { ConnectorType, PortStatus, ChargerType } from '@prisma/client';
+import { ConnectorType, PortStatus, ChargerType, PowertrainType } from '@prisma/client';
 
 import { AdminService } from './admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -36,9 +36,10 @@ describe('AdminService', () => {
   };
 
   const mockBrand = {
-    id: 'brand-123',
+    id: 'tesla',
     name: 'Tesla',
     logoUrl: 'https://example.com/tesla.png',
+    darkLogo: false,
     country: 'US',
     isActive: true,
     createdAt: new Date(),
@@ -46,11 +47,13 @@ describe('AdminService', () => {
   };
 
   const mockModel = {
-    id: 'model-123',
-    brandId: 'brand-123',
+    id: 'model-3',
+    brandId: 'tesla',
     name: 'Model 3',
+    powertrain: PowertrainType.BEV,
+    connectors: ['NACS', 'CCS2'],
+    connectorType: ConnectorType.NACS,
     year: 2024,
-    connectorType: ConnectorType.CCS2,
     batteryCapacityKwh: 75,
     rangeKm: 500,
     imageUrl: 'https://example.com/model3.png',
@@ -137,6 +140,7 @@ describe('AdminService', () => {
 
   describe('createBrand', () => {
     const createBrandDto = {
+      id: 'tesla',
       name: 'Tesla',
       logoUrl: 'https://example.com/tesla.png',
       country: 'US',
@@ -149,12 +153,14 @@ describe('AdminService', () => {
       const result = await service.createBrand(createBrandDto);
 
       expect(mockPrismaService.vehicleBrand.findUnique).toHaveBeenCalledWith({
-        where: { name: 'Tesla' },
+        where: { id: 'tesla' },
       });
       expect(mockPrismaService.vehicleBrand.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
+          id: 'tesla',
           name: 'Tesla',
           logoUrl: createBrandDto.logoUrl,
+          darkLogo: false,
           country: 'US',
           isActive: true,
         }),
@@ -176,10 +182,12 @@ describe('AdminService', () => {
 
   describe('createModel', () => {
     const createModelDto = {
-      brandId: 'brand-123',
+      id: 'model-3',
+      brandId: 'tesla',
       name: 'Model 3',
+      powertrain: PowertrainType.BEV,
+      connectors: [ConnectorType.NACS, ConnectorType.CCS2],
       year: 2024,
-      connectorType: ConnectorType.CCS2,
       batteryCapacityKwh: 75,
       rangeKm: 500,
     };
@@ -192,16 +200,24 @@ describe('AdminService', () => {
       const result = await service.createModel(createModelDto);
 
       expect(mockPrismaService.vehicleBrand.findUnique).toHaveBeenCalledWith({
-        where: { id: 'brand-123' },
+        where: { id: 'tesla' },
       });
       expect(mockPrismaService.vehicleModel.findFirst).toHaveBeenCalledWith({
-        where: {
-          brandId: 'brand-123',
-          name: 'Model 3',
-          year: 2024,
-        },
+        where: { brandId: 'tesla', name: 'Model 3' },
       });
-      expect(mockPrismaService.vehicleModel.create).toHaveBeenCalled();
+      expect(mockPrismaService.vehicleModel.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: 'model-3',
+          brandId: 'tesla',
+          name: 'Model 3',
+          powertrain: PowertrainType.BEV,
+          connectors: [ConnectorType.NACS, ConnectorType.CCS2],
+          connectorType: ConnectorType.NACS,
+          year: 2024,
+          batteryCapacityKwh: 75,
+          rangeKm: 500,
+        }),
+      });
       expect(result).toEqual(mockModel);
     });
 

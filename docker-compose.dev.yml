@@ -1,0 +1,17 @@
+# Development override — mounts source code and runs hot-reload server.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Changes to any .ts file are picked up instantly — no rebuild needed.
+
+services:
+  app:
+    build:
+      context: .
+      target: builder        # Use the builder stage (has devDependencies + ts-node)
+    command: >
+      sh -c "npx prisma migrate deploy && npm run dev"
+    volumes:
+      - .:/app               # Mount entire project so file changes are live
+      - /app/node_modules    # Keep container's node_modules (don't overwrite with host)
+    environment:
+      NODE_ENV: development

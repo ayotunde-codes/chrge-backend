@@ -5,10 +5,27 @@ import {
   PortStatus,
   ChargerType,
   ConnectorType,
+  PowertrainType,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { VEHICLE_BRANDS, VEHICLE_MODELS } from './seed-data/vehicles';
 
 const prisma = new PrismaClient();
+
+function connectorFromString(s: string): ConnectorType {
+  const map: Record<string, ConnectorType> = {
+    CCS1: ConnectorType.CCS1,
+    CCS2: ConnectorType.CCS2,
+    CHADEMO: ConnectorType.CHADEMO,
+    TESLA: ConnectorType.TESLA,
+    J1772: ConnectorType.J1772,
+    TYPE_2: ConnectorType.TYPE_2,
+    TYPE2: ConnectorType.TYPE2,
+    NACS: ConnectorType.NACS,
+    GB_T: ConnectorType.GB_T,
+  };
+  return map[s] ?? ConnectorType.CCS2;
+}
 
 async function main() {
   console.log('🌱 Seeding database...');
@@ -67,338 +84,48 @@ async function main() {
   console.log(`✅ Created admin user: ${adminUser.email}`);
 
   // ============================================================================
-  // VEHICLE BRANDS & MODELS
+  // VEHICLE BRANDS & MODELS (aligned with frontend; images resolved in frontend by id)
   // ============================================================================
 
-  const brands = [
-    {
-      name: 'Tesla',
-      logoUrl: 'https://chrge.ng/brands/tesla.png',
-      country: 'USA',
-      models: [
-        {
-          name: 'Model 3',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 60,
-          rangeKm: 491,
-        },
-        {
-          name: 'Model 3 Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 82,
-          rangeKm: 629,
-        },
-        {
-          name: 'Model Y',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 75,
-          rangeKm: 533,
-        },
-        {
-          name: 'Model Y Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 82,
-          rangeKm: 533,
-        },
-        {
-          name: 'Model S',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 100,
-          rangeKm: 652,
-        },
-        {
-          name: 'Model X',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 100,
-          rangeKm: 560,
-        },
-      ],
-    },
-    {
-      name: 'BMW',
-      logoUrl: 'https://chrge.ng/brands/bmw.png',
-      country: 'Germany',
-      models: [
-        {
-          name: 'iX xDrive50',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 111.5,
-          rangeKm: 630,
-        },
-        {
-          name: 'iX xDrive40',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 76.6,
-          rangeKm: 425,
-        },
-        {
-          name: 'i4 eDrive40',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 83.9,
-          rangeKm: 590,
-        },
-        {
-          name: 'i5 eDrive40',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 83.9,
-          rangeKm: 582,
-        },
-        {
-          name: 'i7 xDrive60',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 101.7,
-          rangeKm: 625,
-        },
-      ],
-    },
-    {
-      name: 'Mercedes-Benz',
-      logoUrl: 'https://chrge.ng/brands/mercedes.png',
-      country: 'Germany',
-      models: [
-        {
-          name: 'EQS 450+',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 107.8,
-          rangeKm: 780,
-        },
-        {
-          name: 'EQE 350+',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 90.6,
-          rangeKm: 654,
-        },
-        {
-          name: 'EQB 300',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 66.5,
-          rangeKm: 423,
-        },
-        {
-          name: 'EQA 250+',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 70.5,
-          rangeKm: 560,
-        },
-      ],
-    },
-    {
-      name: 'BYD',
-      logoUrl: 'https://chrge.ng/brands/byd.png',
-      country: 'China',
-      models: [
-        {
-          name: 'Atto 3',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 60.48,
-          rangeKm: 420,
-        },
-        {
-          name: 'Seal',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 82.56,
-          rangeKm: 570,
-        },
-        { name: 'Han', connectorType: ConnectorType.CCS2, batteryCapacityKwh: 85.44, rangeKm: 521 },
-        { name: 'Tang', connectorType: ConnectorType.CCS2, batteryCapacityKwh: 86.4, rangeKm: 400 },
-        {
-          name: 'Dolphin',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 44.9,
-          rangeKm: 340,
-        },
-      ],
-    },
-    {
-      name: 'Hyundai',
-      logoUrl: 'https://chrge.ng/brands/hyundai.png',
-      country: 'South Korea',
-      models: [
-        {
-          name: 'Ioniq 6 Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 77.4,
-          rangeKm: 614,
-        },
-        {
-          name: 'Ioniq 5 Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 77.4,
-          rangeKm: 507,
-        },
-        {
-          name: 'Kona Electric',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 65.4,
-          rangeKm: 514,
-        },
-      ],
-    },
-    {
-      name: 'Kia',
-      logoUrl: 'https://chrge.ng/brands/kia.png',
-      country: 'South Korea',
-      models: [
-        {
-          name: 'EV6 Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 77.4,
-          rangeKm: 528,
-        },
-        {
-          name: 'EV9 Long Range',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 99.8,
-          rangeKm: 541,
-        },
-        {
-          name: 'Niro EV',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 64.8,
-          rangeKm: 463,
-        },
-      ],
-    },
-    {
-      name: 'Porsche',
-      logoUrl: 'https://chrge.ng/brands/porsche.png',
-      country: 'Germany',
-      models: [
-        {
-          name: 'Taycan',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 79.2,
-          rangeKm: 431,
-        },
-        {
-          name: 'Taycan 4S',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 93.4,
-          rangeKm: 512,
-        },
-        {
-          name: 'Taycan Turbo',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 93.4,
-          rangeKm: 484,
-        },
-      ],
-    },
-    {
-      name: 'Audi',
-      logoUrl: 'https://chrge.ng/brands/audi.png',
-      country: 'Germany',
-      models: [
-        {
-          name: 'e-tron GT',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 93.4,
-          rangeKm: 488,
-        },
-        {
-          name: 'Q8 e-tron',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 114,
-          rangeKm: 582,
-        },
-        {
-          name: 'Q4 e-tron',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 82,
-          rangeKm: 520,
-        },
-      ],
-    },
-    {
-      name: 'Jaguar',
-      logoUrl: 'https://chrge.ng/brands/jaguar.png',
-      country: 'UK',
-      models: [
-        { name: 'I-PACE', connectorType: ConnectorType.CCS2, batteryCapacityKwh: 90, rangeKm: 470 },
-      ],
-    },
-    {
-      name: 'Volkswagen',
-      logoUrl: 'https://chrge.ng/brands/vw.png',
-      country: 'Germany',
-      models: [
-        {
-          name: 'ID.4 Pro',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 77,
-          rangeKm: 520,
-        },
-        {
-          name: 'ID.5 GTX',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 77,
-          rangeKm: 490,
-        },
-        {
-          name: 'ID.Buzz',
-          connectorType: ConnectorType.CCS2,
-          batteryCapacityKwh: 82,
-          rangeKm: 418,
-        },
-      ],
-    },
-    {
-      name: 'Nissan',
-      logoUrl: 'https://chrge.ng/brands/nissan.png',
-      country: 'Japan',
-      models: [
-        { name: 'Ariya', connectorType: ConnectorType.CCS2, batteryCapacityKwh: 87, rangeKm: 533 },
-        {
-          name: 'Leaf',
-          connectorType: ConnectorType.CHADEMO,
-          batteryCapacityKwh: 40,
-          rangeKm: 270,
-        },
-        {
-          name: 'Leaf e+',
-          connectorType: ConnectorType.CHADEMO,
-          batteryCapacityKwh: 62,
-          rangeKm: 385,
-        },
-      ],
-    },
-  ];
-
-  for (const brandData of brands) {
-    const brand = await prisma.vehicleBrand.create({
+  for (const b of VEHICLE_BRANDS) {
+    await prisma.vehicleBrand.create({
       data: {
-        name: brandData.name,
-        logoUrl: brandData.logoUrl,
-        country: brandData.country,
+        id: b.id,
+        name: b.name,
+        logoUrl: null,
+        darkLogo: b.darkLogo ?? false,
         isActive: true,
       },
     });
-
-    for (const modelData of brandData.models) {
-      await prisma.vehicleModel.create({
-        data: {
-          brandId: brand.id,
-          name: modelData.name,
-          connectorType: modelData.connectorType,
-          batteryCapacityKwh: modelData.batteryCapacityKwh,
-          rangeKm: modelData.rangeKm,
-          isActive: true,
-        },
-      });
-    }
-
-    console.log(`✅ Created brand: ${brand.name} with ${brandData.models.length} models`);
   }
+  console.log(`✅ Created ${VEHICLE_BRANDS.length} vehicle brands`);
 
-  // Create a user vehicle
-  const teslaModel = await prisma.vehicleModel.findFirst({
-    where: { name: 'Model 3 Long Range' },
-  });
-  if (teslaModel) {
+  const powertrainMap = { BEV: PowertrainType.BEV, PHEV: PowertrainType.PHEV, EREV: PowertrainType.EREV } as const;
+  for (const m of VEHICLE_MODELS) {
+    const connectors = m.connector as string[];
+    const firstConnector = connectorFromString(connectors[0] ?? 'CCS2');
+    await prisma.vehicleModel.create({
+      data: {
+        id: m.id,
+        brandId: m.brandId,
+        name: m.name,
+        powertrain: powertrainMap[m.powertrain],
+        connectors: connectors,
+        connectorType: firstConnector,
+        imageUrl: m.imageUrl ?? null,
+        isActive: true,
+      },
+    });
+  }
+  console.log(`✅ Created ${VEHICLE_MODELS.length} vehicle models`);
+
+  // Create a user vehicle (Model 3)
+  const teslaModel3 = await prisma.vehicleModel.findUnique({ where: { id: 'model-3' } });
+  if (teslaModel3) {
     await prisma.userVehicle.create({
       data: {
         userId: testUser.id,
-        modelId: teslaModel.id,
+        modelId: teslaModel3.id,
         nickname: 'My Tesla',
         isPrimary: true,
       },
@@ -449,7 +176,8 @@ async function main() {
       description:
         'Premium fast charging station in the heart of Lekki Phase 1. Open 24 hours with security on site.',
       address: '12 Admiralty Way, Lekki Phase 1',
-      city: 'Lekki',
+      area: 'Lekki Phase 1',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.4281,
@@ -516,7 +244,8 @@ async function main() {
       description:
         'Convenient charging location on Victoria Island with dedicated parking. Walking distance to restaurants and shopping.',
       address: '24 Adeola Odeku Street, Victoria Island',
-      city: 'Victoria Island',
+      area: 'Victoria Island',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.4281,
@@ -579,7 +308,8 @@ async function main() {
       description:
         'Fast charging station located in Ikoyi. Perfect stop while running errands in the area.',
       address: '45 Awolowo Road, Ikoyi',
-      city: 'Ikoyi',
+      area: 'Ikoyi',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.4475,
@@ -635,7 +365,8 @@ async function main() {
       description:
         'Charge while you shop at Ikeja City Mall. Multiple charging bays available in the parking structure.',
       address: 'Obafemi Awolowo Way, Alausa, Ikeja',
-      city: 'Ikeja',
+      area: 'Alausa',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.6018,
@@ -698,7 +429,8 @@ async function main() {
       description:
         'Convenient charging at Maryland Mall. AC charging available while you enjoy shopping or dining.',
       address: '350 Ikorodu Road, Maryland',
-      city: 'Maryland',
+      area: 'Maryland',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.5632,
@@ -746,7 +478,8 @@ async function main() {
       description:
         'Fast charging hub in Surulere with multiple DCFC chargers. Ideal for quick top-ups.',
       address: '15 Adeniran Ogunsanya Street, Surulere',
-      city: 'Surulere',
+      area: 'Surulere',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.4969,
@@ -793,7 +526,8 @@ async function main() {
       name: 'GridPower Yaba Tech',
       description: 'Charging station near Yaba Tech. Popular with students and faculty.',
       address: 'Herbert Macaulay Way, Yaba',
-      city: 'Yaba',
+      area: 'Yaba',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.5158,
@@ -841,7 +575,8 @@ async function main() {
       description:
         'Serving the Ajah and Sangotedo communities. Located near Abraham Adesanya roundabout.',
       address: 'Abraham Adesanya Road, Ajah',
-      city: 'Ajah',
+      area: 'Ajah',
+      city: 'Lagos',
       state: 'Lagos',
       country: 'NG',
       latitude: 6.4667,
@@ -988,7 +723,7 @@ async function main() {
   console.log('   Password: TestPassword123!');
   console.log(`\n📍 Created ${stationsData.length} stations in Lagos, Nigeria`);
   console.log(
-    `🚗 Created ${brands.length} vehicle brands with ${brands.reduce((acc, b) => acc + b.models.length, 0)} models`,
+    `🚗 Created ${VEHICLE_BRANDS.length} vehicle brands with ${VEHICLE_MODELS.length} models`,
   );
 }
 

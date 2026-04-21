@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { VehiclesService } from './vehicles.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -22,6 +22,7 @@ export class VehiclesController {
       name: brand.name,
       logoUrl: brand.logoUrl,
       country: brand.country,
+      darkLogo: brand.darkLogo ?? null,
     }));
   }
 
@@ -29,16 +30,18 @@ export class VehiclesController {
   @Public()
   @ApiOperation({ summary: 'Get all models for a brand' })
   @ApiResponse({ status: 200, type: [VehicleModelResponseDto] })
-  async getModels(
-    @Param('brandId', ParseUUIDPipe) brandId: string,
-  ): Promise<VehicleModelResponseDto[]> {
+  async getModels(@Param('brandId') brandId: string): Promise<VehicleModelResponseDto[]> {
     const models = await this.vehiclesService.findModelsByBrand(brandId);
+    const connectorsArray = (c: unknown): string[] =>
+      Array.isArray(c) ? (c as string[]) : [];
     return models.map((model) => ({
       id: model.id,
       brandId: model.brandId,
       name: model.name,
-      year: model.year,
+      powertrain: model.powertrain,
+      connectors: connectorsArray(model.connectors),
       connectorType: model.connectorType,
+      year: model.year,
       batteryCapacityKwh: model.batteryCapacityKwh,
       rangeKm: model.rangeKm,
       imageUrl: model.imageUrl,

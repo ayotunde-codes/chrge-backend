@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { VehicleBrand, VehicleModel, Station, Port, StationImage } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -10,6 +10,7 @@ import {
   UpdatePortDto,
   CreateStationImageDto,
 } from './dto/admin.dto';
+import { ReviewStationDto } from '../stations/dto/submit-station.dto';
 
 @Injectable()
 export class AdminService {
@@ -21,16 +22,18 @@ export class AdminService {
 
   async createBrand(dto: CreateVehicleBrandDto): Promise<VehicleBrand> {
     const existing = await this.prisma.vehicleBrand.findUnique({
-      where: { name: dto.name },
+      where: { id: dto.id },
     });
     if (existing) {
-      throw new ConflictException('Brand already exists');
+      throw new ConflictException('Brand with this id already exists');
     }
 
     return this.prisma.vehicleBrand.create({
       data: {
+        id: dto.id,
         name: dto.name,
         logoUrl: dto.logoUrl,
+        darkLogo: dto.darkLogo ?? false,
         country: dto.country,
         isActive: dto.isActive ?? true,
       },
@@ -50,24 +53,26 @@ export class AdminService {
       throw new NotFoundException('Brand not found');
     }
 
-    // Check for duplicate
+    // Check for duplicate (unique on brandId + name)
     const existing = await this.prisma.vehicleModel.findFirst({
-      where: {
-        brandId: dto.brandId,
-        name: dto.name,
-        year: dto.year,
-      },
+      where: { brandId: dto.brandId, name: dto.name },
     });
     if (existing) {
       throw new ConflictException('Model already exists');
     }
 
+    const connectors = dto.connectors as string[];
+    const connectorType = connectors.length > 0 ? dto.connectors[0] : null;
+
     return this.prisma.vehicleModel.create({
       data: {
+        id: dto.id,
         brandId: dto.brandId,
         name: dto.name,
+        powertrain: dto.powertrain,
+        connectors,
+        connectorType,
         year: dto.year,
-        connectorType: dto.connectorType,
         batteryCapacityKwh: dto.batteryCapacityKwh,
         rangeKm: dto.rangeKm,
         imageUrl: dto.imageUrl,
@@ -95,12 +100,35 @@ export class AdminService {
         timezone: dto.timezone || 'Africa/Lagos',
         isActive: dto.isActive ?? true,
         isVerified: dto.isVerified ?? false,
+        // Admin-created stations are always approved
+        status: 'APPROVED',
         operatingHours: dto.operatingHours,
         amenities: dto.amenities || [],
         pricing: dto.pricing,
         phoneNumber: dto.phoneNumber,
         email: dto.email,
         networkId: dto.networkId,
+      },
+    });
+  }
+
+  async reviewStation(stationId: string, dto: ReviewStationDto): Promise<Station> {
+    const station = await this.prisma.station.findUnique({ where: { id: stationId } });
+    if (!station) {
+      throw new NotFoundException('Station not found');
+    }
+
+    if (dto.action === 'REJECT' && !dto.rejectionReason) {
+      throw new BadRequestException('rejectionReason is required when rejecting a station');
+    }
+
+    return this.prisma.station.update({
+      where: { id: stationId },
+      data: {
+        status: dto.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+        isActive: dto.action === 'APPROVE',
+        isVerified: dto.action === 'APPROVE',
+        rejectionReason: dto.action === 'REJECT' ? dto.rejectionReason : null,
       },
     });
   }
