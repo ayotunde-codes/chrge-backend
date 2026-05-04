@@ -2,7 +2,11 @@
 CREATE TYPE "PowertrainType" AS ENUM ('BEV', 'PHEV', 'EREV');
 
 -- Add TYPE_2 to ConnectorType (for frontend alignment)
-ALTER TYPE "ConnectorType" ADD VALUE 'TYPE_2';
+-- NOTE: ALTER TYPE ADD VALUE cannot run inside a transaction in PostgreSQL,
+-- so we commit the current transaction first, add the value, then continue.
+COMMIT;
+ALTER TYPE "ConnectorType" ADD VALUE IF NOT EXISTS 'TYPE_2';
+BEGIN;
 
 -- AlterTable vehicle_brands: add darkLogo
 ALTER TABLE "vehicle_brands" ADD COLUMN "darkLogo" BOOLEAN DEFAULT false;
