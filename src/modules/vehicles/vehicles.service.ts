@@ -1,19 +1,30 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { VehicleBrand, VehicleModel, UserVehicle, ConnectorType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserVehicleDto } from './dto/create-user-vehicle.dto';
 import { UpdateUserVehicleDto } from './dto/update-user-vehicle.dto';
 
+const TTL_1_HOUR = 60 * 60 * 1000;
+
 @Injectable()
 export class VehiclesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
 
   // ============================================================================
   // BRANDS
   // ============================================================================
 
   async findAllBrands(search?: string): Promise<VehicleBrand[]> {
-    return this.prisma.vehicleBrand.findMany({
+    const key = `vehicles:brands:${search ?? ''}`;
+    const cached = await this.cache.get<VehicleBrand[]>(key);
+    if (cached) return cached;
+
+    const brands = await this.prisma.vehicleBrand.findMany({
       where: {
         isActive: true,
         ...(search && {
@@ -22,6 +33,9 @@ export class VehiclesService {
       },
       orderBy: { name: 'asc' },
     });
+
+    await this.cache.set(key, brands, TTL_1_HOUR);
+    return brands;
   }
 
   async findBrandById(id: string): Promise<VehicleBrand> {
@@ -39,13 +53,19 @@ export class VehiclesService {
   // ============================================================================
 
   async findModelsByBrand(brandId: string): Promise<VehicleModel[]> {
-    // Verify brand exists
     await this.findBrandById(brandId);
 
-    return this.prisma.vehicleModel.findMany({
+    const key = `vehicles:models:${brandId}`;
+    const cached = await this.cache.get<VehicleModel[]>(key);
+    if (cached) return cached;
+
+    const models = await this.prisma.vehicleModel.findMany({
       where: { brandId, isActive: true },
       orderBy: [{ year: 'desc' }, { name: 'asc' }],
     });
+
+    await this.cache.set(key, models, TTL_1_HOUR);
+    return models;
   }
 
   async findModelById(id: string): Promise<VehicleModel & { brand: VehicleBrand }> {
@@ -76,10 +96,8 @@ export class VehiclesService {
   }
 
   async createUserVehicle(userId: string, dto: CreateUserVehicleDto): Promise<UserVehicle & { model: VehicleModel & { brand: VehicleBrand } }> {
-    // Verify model exists
     await this.findModelById(dto.modelId);
 
-    // Check if user already has this vehicle
     const existing = await this.prisma.userVehicle.findFirst({
       where: { userId, modelId: dto.modelId, deletedAt: null },
     });
@@ -87,13 +105,11 @@ export class VehiclesService {
       throw new ConflictException('You already have this vehicle added');
     }
 
-    // If this is the first vehicle or setPrimary is true, make it primary
     const userVehicleCount = await this.prisma.userVehicle.count({
       where: { userId, deletedAt: null },
     });
     const shouldBePrimary = userVehicleCount === 0 || dto.setPrimary;
 
-    // If setting as primary, unset other primaries
     if (shouldBePrimary) {
       await this.prisma.userVehicle.updateMany({
         where: { userId, isPrimary: true },
@@ -128,7 +144,6 @@ export class VehiclesService {
       throw new NotFoundException('Vehicle not found');
     }
 
-    // If setting as primary, unset other primaries
     if (dto.isPrimary) {
       await this.prisma.userVehicle.updateMany({
         where: { userId, isPrimary: true, id: { not: vehicleId } },
@@ -163,7 +178,6 @@ export class VehiclesService {
       data: { deletedAt: new Date() },
     });
 
-    // If this was primary, set another as primary
     if (vehicle.isPrimary) {
       const nextVehicle = await this.prisma.userVehicle.findFirst({
         where: { userId, deletedAt: null },

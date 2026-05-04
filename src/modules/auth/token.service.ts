@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { User } from '@prisma/client';
@@ -159,6 +160,7 @@ export class TokenService {
   /**
    * Clean up expired tokens (can be run as a cron job)
    */
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async cleanupExpiredTokens(): Promise<number> {
     const result = await this.prisma.refreshToken.deleteMany({
       where: {

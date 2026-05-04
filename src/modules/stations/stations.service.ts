@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -7,6 +9,17 @@ import { NearbyStationsDto } from './dto/nearby-stations.dto';
 import { AllStationsDto } from './dto/all-stations.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { SubmitStationDto } from './dto/submit-station.dto';
+
+const TTL_2_MIN = 2 * 60 * 1000;
+const TTL_5_MIN = 5 * 60 * 1000;
+
+type StationDetail = Prisma.StationGetPayload<{
+  include: {
+    network: { select: { id: true; name: true; logoUrl: true; website: true; phoneNumber: true } };
+    ports: { orderBy: { portNumber: 'asc' } };
+    images: { orderBy: { sortOrder: 'asc' } };
+  };
+}>;
 
 // Operating hours structure
 interface DayHours {
@@ -34,10 +47,13 @@ interface StationPricing {
 
 @Injectable()
 export class StationsService {
+  private readonly logger = new Logger(StationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly vehiclesService: VehiclesService,
     private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   // ============================================================================
@@ -220,6 +236,11 @@ export class StationsService {
   // ============================================================================
 
   async findTopPicks(lat: number, lng: number, userId?: string, limit = 4): Promise<StationCardResult[]> {
+    // Round to 2dp (~1km precision) so nearby users share the same cache entry
+    const cacheKey = `stations:top-picks:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
+    const cached = await this.cache.get<StationCardResult[]>(cacheKey);
+    if (cached) return cached;
+
     // Get user's primary vehicle connector type
     let userConnector: ConnectorType | null = null;
     if (userId) {
@@ -316,7 +337,7 @@ export class StationsService {
     const imagesByStation = this.groupBy(images, 'stationId');
     const favoriteStationIds = new Set(favorites.map((f) => f.stationId));
 
-    return stations.map((station) => {
+    const result = stations.map((station) => {
       const stationPorts = portsByStation[station.id] || [];
       const primaryImage = imagesByStation[station.id]?.[0];
 
@@ -327,6 +348,9 @@ export class StationsService {
         favoriteStationIds.has(station.id),
       );
     });
+
+    await this.cache.set(cacheKey, result, TTL_5_MIN);
+    return result;
   }
 
   // ============================================================================
@@ -450,26 +474,37 @@ export class StationsService {
   // ============================================================================
 
   async findById(id: string, userId?: string): Promise<StationDetailResult> {
-    const station = await this.prisma.station.findFirst({
-      where: { id, isActive: true, deletedAt: null },
-      include: {
-        network: {
-          select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true },
-        },
-        ports: {
-          orderBy: { portNumber: 'asc' },
-        },
-        images: {
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
+    const cacheKey = `stations:detail:${id}`;
+    const cached = await this.cache.get<StationDetail>(cacheKey);
 
-    if (!station) {
-      throw new NotFoundException('Station not found');
+    let station: StationDetail;
+    if (cached) {
+      station = cached;
+    } else {
+      const found = await this.prisma.station.findFirst({
+        where: { id, isActive: true, deletedAt: null },
+        include: {
+          network: {
+            select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true },
+          },
+          ports: {
+            orderBy: { portNumber: 'asc' },
+          },
+          images: {
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      });
+
+      if (!found) {
+        throw new NotFoundException('Station not found');
+      }
+
+      await this.cache.set(cacheKey, found, TTL_5_MIN);
+      station = found;
     }
 
-    // Check if user has favorited
+    // Favorite status is user-specific — always check live, not cached
     let isFavorite = false;
     if (userId) {
       const favorite = await this.prisma.favorite.findUnique({
@@ -490,7 +525,10 @@ export class StationsService {
     limit = 10,
     cursor?: string,
   ): Promise<{ reviews: ReviewResult[]; nextCursor: string | null }> {
-    // Verify station exists
+    const cacheKey = `stations:reviews:${stationId}:${limit}:${cursor ?? ''}`;
+    const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(cacheKey);
+    if (cached) return cached;
+
     const station = await this.prisma.station.findFirst({
       where: { id: stationId, deletedAt: null },
     });
@@ -516,7 +554,7 @@ export class StationsService {
     const hasMore = reviews.length > limit;
     if (hasMore) reviews.pop();
 
-    return {
+    const result = {
       reviews: reviews.map((r) => ({
         id: r.id,
         rating: r.rating,
@@ -530,6 +568,9 @@ export class StationsService {
       })),
       nextCursor: hasMore ? reviews[reviews.length - 1].createdAt.toISOString() : null,
     };
+
+    await this.cache.set(cacheKey, result, TTL_5_MIN);
+    return result;
   }
 
   async createReview(userId: string, stationId: string, dto: CreateReviewDto): Promise<Review> {
@@ -569,8 +610,16 @@ export class StationsService {
       });
     }
 
-    // Update station aggregate rating
-    await this.updateStationRating(stationId);
+    // Fire-and-forget — don't block the response waiting for aggregate recalculation
+    this.updateStationRating(stationId).catch((err) =>
+      this.logger.error(`Failed to update rating for station ${stationId}`, err),
+    );
+
+    // Invalidate cached reviews and detail for this station
+    await Promise.all([
+      this.cache.del(`stations:reviews:${stationId}:10:`),
+      this.cache.del(`stations:detail:${stationId}`),
+    ]);
 
     return review;
   }

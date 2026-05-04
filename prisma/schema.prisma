@@ -270,6 +270,7 @@ model Station {
   @@index([latitude, longitude])
   @@index([city, state])
   @@index([isActive])
+  @@index([avgRating])
   @@map("stations")
 }
 

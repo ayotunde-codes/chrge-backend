@@ -17,6 +17,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: chrge-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - chrge_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build: .
     container_name: chrge-app
@@ -28,6 +42,7 @@ services:
       PORT: 3000
       API_PREFIX: api/v1
       DATABASE_URL: postgresql://chrge:chrge_secret@postgres:5432/chrge_dev?schema=public
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_ACCESS_EXPIRATION: 15m
       JWT_REFRESH_EXPIRATION: 30d
@@ -39,6 +54,8 @@ services:
       AUTH_THROTTLE_LIMIT: 10
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   postgres-test:
@@ -70,4 +87,5 @@ services:
 volumes:
   chrge_postgres_data:
   chrge_postgres_test_data:
+  chrge_redis_data:
 
