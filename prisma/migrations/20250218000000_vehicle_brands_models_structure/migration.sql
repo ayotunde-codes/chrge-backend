@@ -1,12 +1,16 @@
 -- CreateEnum
 CREATE TYPE "PowertrainType" AS ENUM ('BEV', 'PHEV', 'EREV');
 
--- Add TYPE_2 to ConnectorType (for frontend alignment)
--- NOTE: ALTER TYPE ADD VALUE cannot run inside a transaction in PostgreSQL,
--- so we commit the current transaction first, add the value, then continue.
-COMMIT;
-ALTER TYPE "ConnectorType" ADD VALUE IF NOT EXISTS 'TYPE_2';
-BEGIN;
+-- Add TYPE_2 to ConnectorType using rename+recreate (works inside a transaction, unlike ADD VALUE)
+ALTER TYPE "ConnectorType" RENAME TO "ConnectorType_old";
+CREATE TYPE "ConnectorType" AS ENUM ('CCS1', 'CCS2', 'CHADEMO', 'TESLA', 'J1772', 'TYPE_2', 'TYPE2', 'NACS', 'GB_T');
+
+-- Re-bind columns that use ConnectorType
+ALTER TABLE "vehicle_models" ALTER COLUMN "connectorType" TYPE "ConnectorType" USING "connectorType"::text::"ConnectorType";
+ALTER TABLE "ports" ALTER COLUMN "connectorType" TYPE "ConnectorType" USING "connectorType"::text::"ConnectorType";
+
+-- Drop old type
+DROP TYPE "ConnectorType_old";
 
 -- AlterTable vehicle_brands: add darkLogo
 ALTER TABLE "vehicle_brands" ADD COLUMN "darkLogo" BOOLEAN DEFAULT false;
