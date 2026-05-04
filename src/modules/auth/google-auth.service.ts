@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OAuth2Client } from 'google-auth-library';
 
 export interface GoogleUserInfo {
   sub: string; // Google user ID
@@ -12,46 +11,38 @@ export interface GoogleUserInfo {
   picture?: string;
 }
 
+interface GoogleUserinfoResponse {
+  sub: string;
+  email: string;
+  email_verified: boolean;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  picture?: string;
+}
+
 @Injectable()
 export class GoogleAuthService {
   private readonly logger = new Logger(GoogleAuthService.name);
-  private readonly oauthClient: OAuth2Client;
-  private readonly clientIds: string[];
 
   constructor(private readonly configService: ConfigService) {
     const webClientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
-    const iosClientId = this.configService.get<string>('GOOGLE_CLIENT_ID_IOS');
-    const androidClientId = this.configService.get<string>('GOOGLE_CLIENT_ID_ANDROID');
-
-    this.oauthClient = new OAuth2Client(webClientId);
-
-    // Collect all valid client IDs (filter out undefined)
-    this.clientIds = [webClientId, iosClientId, androidClientId].filter((id): id is string => !!id);
-
-    if (this.clientIds.length === 0) {
-      this.logger.warn('No Google client IDs configured. Google login will not work.');
+    if (!webClientId) {
+      this.logger.warn('No Google client ID configured. Google login will not work.');
     }
   }
 
-  /**
-   * Verify a Google ID token and extract user information
-   */
-  async verifyIdToken(idToken: string): Promise<GoogleUserInfo> {
-    if (this.clientIds.length === 0) {
-      throw new UnauthorizedException('Google login is not configured');
-    }
-
+  async verifyAccessToken(accessToken: string): Promise<GoogleUserInfo> {
     try {
-      const ticket = await this.oauthClient.verifyIdToken({
-        idToken,
-        audience: this.clientIds,
+      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
-      const payload = ticket.getPayload();
-
-      if (!payload) {
-        throw new UnauthorizedException('Invalid Google token: no payload');
+      if (!response.ok) {
+        throw new UnauthorizedException('Invalid or expired Google access token');
       }
+
+      const payload = (await response.json()) as GoogleUserinfoResponse;
 
       if (!payload.email) {
         throw new UnauthorizedException('Google account must have an email address');

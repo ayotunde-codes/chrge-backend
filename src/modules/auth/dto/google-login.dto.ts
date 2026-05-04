@@ -3,12 +3,12 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class GoogleLoginDto {
   @ApiProperty({
-    description: 'Google ID token obtained from Google Sign-In',
-    example: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'Google OAuth2 access token obtained from Google Sign-In',
+    example: 'ya29.a0AfH6SMC...',
   })
   @IsString()
-  @IsNotEmpty({ message: 'Google ID token is required' })
-  idToken: string;
+  @IsNotEmpty({ message: 'Google access token is required' })
+  accessToken: string;
 }
 
 

@@ -122,8 +122,7 @@ export class AuthService {
    * Login or register with Google ID token
    */
   async googleLogin(dto: GoogleLoginDto, meta: RequestMeta): Promise<AuthResponseDto> {
-    // Verify Google ID token
-    const googleUser: GoogleUserInfo = await this.googleAuthService.verifyIdToken(dto.idToken);
+    const googleUser: GoogleUserInfo = await this.googleAuthService.verifyAccessToken(dto.accessToken);
 
     // Track whether this is a new account
     let isNewUser = false;

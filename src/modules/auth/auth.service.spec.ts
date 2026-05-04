@@ -32,7 +32,7 @@ describe('AuthService', () => {
   };
 
   const mockGoogleAuthService = {
-    verifyIdToken: jest.fn(),
+    verifyAccessToken: jest.fn(),
   };
 
   const mockUsersService = {
@@ -206,7 +206,7 @@ describe('AuthService', () => {
   });
 
   describe('googleLogin', () => {
-    const googleLoginDto = { idToken: 'google-id-token' };
+    const googleLoginDto = { accessToken: 'google-access-token' };
     const googleUserInfo = {
       sub: 'google-user-123',
       email: 'google@example.com',
@@ -217,7 +217,7 @@ describe('AuthService', () => {
     };
 
     it('should create new user for first-time Google login', async () => {
-      mockGoogleAuthService.verifyIdToken.mockResolvedValue(googleUserInfo);
+      mockGoogleAuthService.verifyAccessToken.mockResolvedValue(googleUserInfo);
       mockPrismaService.user.findFirst.mockResolvedValue(null);
       mockPrismaService.user.create.mockResolvedValue({
         ...mockUser,
@@ -229,7 +229,7 @@ describe('AuthService', () => {
 
       const result = await service.googleLogin(googleLoginDto, mockRequestMeta);
 
-      expect(mockGoogleAuthService.verifyIdToken).toHaveBeenCalledWith(googleLoginDto.idToken);
+      expect(mockGoogleAuthService.verifyAccessToken).toHaveBeenCalledWith(googleLoginDto.accessToken);
       expect(mockPrismaService.user.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           email: googleUserInfo.email.toLowerCase(),
@@ -249,7 +249,7 @@ describe('AuthService', () => {
         ...mockUser,
         provider: AuthProvider.EMAIL,
       };
-      mockGoogleAuthService.verifyIdToken.mockResolvedValue(googleUserInfo);
+      mockGoogleAuthService.verifyAccessToken.mockResolvedValue(googleUserInfo);
       mockPrismaService.user.findFirst.mockResolvedValue(existingEmailUser);
       mockPrismaService.user.update.mockResolvedValue({
         ...existingEmailUser,
@@ -288,7 +288,7 @@ describe('AuthService', () => {
         lastName: googleUserInfo.family_name,
         avatarUrl: googleUserInfo.picture,
       };
-      mockGoogleAuthService.verifyIdToken.mockResolvedValue(googleUserInfo);
+      mockGoogleAuthService.verifyAccessToken.mockResolvedValue(googleUserInfo);
       mockPrismaService.user.findFirst.mockResolvedValue(existingGoogleUser);
       mockPrismaService.user.update.mockResolvedValue(updatedUser);
       mockTokenService.generateTokens.mockResolvedValue(mockTokens);
@@ -309,7 +309,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if Google user is deactivated', async () => {
-      mockGoogleAuthService.verifyIdToken.mockResolvedValue(googleUserInfo);
+      mockGoogleAuthService.verifyAccessToken.mockResolvedValue(googleUserInfo);
       mockPrismaService.user.findFirst.mockResolvedValue({
         ...mockUser,
         provider: AuthProvider.GOOGLE,
