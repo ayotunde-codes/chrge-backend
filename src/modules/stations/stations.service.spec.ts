@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
 import { ConnectorType, PortStatus } from '@prisma/client';
 
 import { StationsService } from './stations.service';
@@ -39,6 +41,16 @@ describe('StationsService', () => {
 
   const mockVehiclesService = {
     getPrimaryVehicleConnector: jest.fn(),
+  };
+
+  const mockConfigService = {
+    get: jest.fn(),
+  };
+
+  const mockCacheManager = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
   };
 
   const mockStation = {
@@ -134,6 +146,8 @@ describe('StationsService', () => {
         StationsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: VehiclesService, useValue: mockVehiclesService },
+        { provide: ConfigService, useValue: mockConfigService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
       ],
     }).compile();
 
@@ -142,6 +156,34 @@ describe('StationsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  // ============================================================================
+  // ALL STATIONS
+  // ============================================================================
+
+  describe('findAll', () => {
+    it('should search station name, address, area, and city', async () => {
+      mockPrismaService.station.findMany.mockResolvedValue([]);
+      mockPrismaService.port.findMany.mockResolvedValue([]);
+      mockPrismaService.stationImage.findMany.mockResolvedValue([]);
+      mockPrismaService.favorite.findMany.mockResolvedValue([]);
+
+      await service.findAll({ search: 'Lekki', limit: 20 });
+
+      expect(mockPrismaService.station.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { name: { contains: 'Lekki', mode: 'insensitive' } },
+              { address: { contains: 'Lekki', mode: 'insensitive' } },
+              { area: { contains: 'Lekki', mode: 'insensitive' } },
+              { city: { contains: 'Lekki', mode: 'insensitive' } },
+            ],
+          }),
+        }),
+      );
+    });
   });
 
   // ============================================================================
@@ -543,7 +585,7 @@ describe('StationsService', () => {
 
       expect(mockPrismaService.$queryRaw).toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toHaveProperty('avgRating', 4.8);
+      expect(result[0]).toHaveProperty('rating', 4.8);
     });
   });
 });
