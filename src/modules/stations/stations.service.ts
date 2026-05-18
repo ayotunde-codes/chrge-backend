@@ -379,7 +379,12 @@ export class StationsService {
     }
 
     if (dto.search) {
-      where.name = { contains: dto.search, mode: 'insensitive' };
+      where.OR = [
+        { name: { contains: dto.search, mode: 'insensitive' } },
+        { address: { contains: dto.search, mode: 'insensitive' } },
+        { area: { contains: dto.search, mode: 'insensitive' } },
+        { city: { contains: dto.search, mode: 'insensitive' } },
+      ];
     }
 
     if (dto.connectors?.length || dto.status?.length || dto.minPowerKw) {
