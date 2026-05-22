@@ -744,6 +744,18 @@ export class StationsService {
         },
       });
 
+      if (dto.heroImageUrl) {
+        await tx.stationImage.create({
+          data: {
+            stationId: created.id,
+            url: dto.heroImageUrl,
+            sortOrder: 0,
+            isPrimary: true,
+            uploadedBy: userId,
+          },
+        });
+      }
+
       if (dto.ports?.length) {
         await tx.port.createMany({
           data: dto.ports.map((p) => ({
