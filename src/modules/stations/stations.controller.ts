@@ -10,7 +10,15 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { mkdirSync } from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { StationsService } from './stations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -83,6 +91,39 @@ export class StationsController {
       Math.min(limit || 4, 4),
     );
     return picks as unknown as StationCardResponseDto[];
+  }
+
+  @Post('upload-image')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Upload a station image, returns the public URL' })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), 'uploads', 'stations');
+          mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new BadRequestException('Only image files are allowed'), false);
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
+    }),
+  )
+  async uploadImage(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<{ url: string }> {
+    if (!file) throw new BadRequestException('No image file provided');
+    const baseUrl = process.env.API_BASE_URL ?? 'http://localhost:3001';
+    return { url: `${baseUrl}/uploads/stations/${file.filename}` };
   }
 
   @Post('submit')

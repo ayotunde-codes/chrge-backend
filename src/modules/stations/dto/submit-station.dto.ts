@@ -99,6 +99,11 @@ export class SubmitStationDto {
   @MaxLength(2)
   country?: string;
 
+  @ApiPropertyOptional({ example: 'https://api.gochrge.com/uploads/stations/abc123.jpg' })
+  @IsOptional()
+  @IsString()
+  heroImageUrl?: string;
+
   @ApiProperty({ example: 6.5095 })
   @IsNumber()
   @Min(-90)
