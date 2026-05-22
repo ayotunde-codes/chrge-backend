@@ -339,17 +339,6 @@ export class StationDetailResponseDto {
 // REVIEWS
 // ============================================================================
 
-class ReviewUserDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ example: 'John Doe' })
-  name: string;
-
-  @ApiPropertyOptional()
-  avatarUrl: string | null;
-}
-
 export class ReviewResponseDto {
   @ApiProperty()
   id: string;
@@ -363,8 +352,8 @@ export class ReviewResponseDto {
   @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({ type: ReviewUserDto })
-  user: ReviewUserDto;
+  @ApiProperty({ example: 'QuietCraneBrewer', description: 'Anonymous handle — stable per review' })
+  anonHandle: string;
 }
 
 export class ReviewListResponseDto {

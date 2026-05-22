@@ -151,6 +151,22 @@ export class StationsController {
     return { stations: stations as unknown as StationCardResponseDto[], nextCursor: null };
   }
 
+  @Get('identity/preview')
+  @ApiOperation({ summary: 'Preview sample anonymous handle formats used in reviews' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        format: 'AdjectiveNounRole',
+        examples: ['QuietCraneBrewer', 'BoldFoxSteeper', 'MysticOwlBarista'],
+        totalCombinations: 440940,
+      },
+    },
+  })
+  getIdentityPreview(): { format: string; examples: string[]; totalCombinations: number } {
+    return this.stationsService.getIdentityPreview();
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get station details' })
