@@ -5,6 +5,7 @@ import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma } from '@p
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
+import { HandleService } from './handle.service';
 import { NearbyStationsDto } from './dto/nearby-stations.dto';
 import { AllStationsDto } from './dto/all-stations.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
@@ -54,6 +55,7 @@ export class StationsService {
     private readonly vehiclesService: VehiclesService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly handleService: HandleService,
   ) {}
 
   // ============================================================================
@@ -547,11 +549,6 @@ export class StationsService {
         deletedAt: null,
         ...(cursor && { createdAt: { lt: new Date(cursor) } }),
       },
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, avatarUrl: true },
-        },
-      },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
     });
@@ -565,11 +562,7 @@ export class StationsService {
         rating: r.rating,
         comment: r.comment,
         createdAt: r.createdAt,
-        user: {
-          id: r.user.id,
-          name: [r.user.firstName, r.user.lastName].filter(Boolean).join(' ') || 'Anonymous',
-          avatarUrl: r.user.avatarUrl,
-        },
+        anonHandle: r.anonHandle ?? this.handleService.fromReviewId(r.id),
       })),
       nextCursor: hasMore ? reviews[reviews.length - 1].createdAt.toISOString() : null,
     };
@@ -594,23 +587,23 @@ export class StationsService {
 
     let review: Review;
     if (existingReview) {
-      // Update existing review
       review = await this.prisma.review.update({
         where: { id: existingReview.id },
         data: {
           rating: dto.rating,
           comment: dto.comment,
           deletedAt: null,
+          // preserve the original handle — the reviewer keeps the same identity
         },
       });
     } else {
-      // Create new review
       review = await this.prisma.review.create({
         data: {
           userId,
           stationId,
           rating: dto.rating,
           comment: dto.comment,
+          anonHandle: this.handleService.generate(),
         },
       });
     }
@@ -627,6 +620,18 @@ export class StationsService {
     ]);
 
     return review;
+  }
+
+  // ============================================================================
+  // IDENTITY PREVIEW
+  // ============================================================================
+
+  getIdentityPreview(): { format: string; examples: string[]; totalCombinations: number } {
+    return {
+      format: 'AdjectiveNounRole',
+      examples: this.handleService.sampleHandles,
+      totalCombinations: this.handleService.totalCombinations,
+    };
   }
 
   // ============================================================================
@@ -1210,9 +1215,5 @@ interface ReviewResult {
   rating: number;
   comment: string | null;
   createdAt: Date;
-  user: {
-    id: string;
-    name: string;
-    avatarUrl: string | null;
-  };
+  anonHandle: string;
 }

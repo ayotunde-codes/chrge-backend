@@ -346,12 +346,13 @@ model Favorite {
 }
 
 model Review {
-  id        String   @id @default(uuid())
-  userId    String
-  stationId String
-  rating    Int      // 1-5 stars
-  comment   String?
-  
+  id          String   @id @default(uuid())
+  userId      String
+  stationId   String
+  rating      Int      // 1-5 stars
+  comment     String?
+  anonHandle  String?  // e.g. "QuietCraneBrewer" — generated once on creation, never changes
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
