@@ -79,6 +79,8 @@ describe('AdminService', () => {
     operatingHours: null,
     amenities: [],
     pricing: null,
+    stationType: 'EV',
+    cngDetails: null,
     phoneNumber: null,
     email: null,
     networkId: null,
@@ -288,6 +290,38 @@ describe('AdminService', () => {
         data: expect.objectContaining({
           country: 'GH',
           timezone: 'Africa/Accra',
+        }),
+      });
+    });
+
+    it('should create a CNG station with CNG metadata and no EV ports', async () => {
+      const cngStationDto = {
+        ...createStationDto,
+        name: 'NIPCO CNG Ibafo',
+        stationType: 'CNG' as never,
+        pricing: { perScm: 320, currency: 'NGN' },
+        cngDetails: {
+          dispenserCount: 6,
+          pressureRating: '200 bar',
+          paymentMethods: ['cash', 'card', 'transfer'],
+          availabilityStatus: 'AVAILABLE',
+        },
+      };
+      mockPrismaService.station.create.mockResolvedValue({
+        ...mockStation,
+        ...cngStationDto,
+      });
+
+      await service.createStation(cngStationDto);
+
+      expect(mockPrismaService.station.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          stationType: 'CNG',
+          pricing: { perScm: 320, currency: 'NGN' },
+          cngDetails: expect.objectContaining({
+            dispenserCount: 6,
+            availabilityStatus: 'AVAILABLE',
+          }),
         }),
       });
     });

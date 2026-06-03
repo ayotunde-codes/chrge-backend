@@ -7,6 +7,7 @@ import { ConnectorType, PortStatus } from '@prisma/client';
 import { StationsService } from './stations.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
+import { HandleService } from './handle.service';
 
 describe('StationsService', () => {
   let service: StationsService;
@@ -53,6 +54,11 @@ describe('StationsService', () => {
     del: jest.fn(),
   };
 
+  const mockHandleService = {
+    generate: jest.fn().mockReturnValue('QuietVoltDriver'),
+    fromReviewId: jest.fn().mockReturnValue('QuietVoltDriver'),
+  };
+
   const mockStation = {
     id: 'station-123',
     name: 'CHRGE VI Station',
@@ -70,6 +76,8 @@ describe('StationsService', () => {
     operatingHours: { mon: { open: '08:00', close: '22:00' } },
     amenities: ['wifi', 'restrooms'],
     pricing: { perKwh: 350, currency: 'NGN' },
+    stationType: 'EV',
+    cngDetails: null,
     phoneNumber: '+2341234567890',
     networkId: 'network-123',
     totalPorts: 4,
@@ -148,6 +156,7 @@ describe('StationsService', () => {
         { provide: VehiclesService, useValue: mockVehiclesService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },
+        { provide: HandleService, useValue: mockHandleService },
       ],
     }).compile();
 
@@ -184,6 +193,52 @@ describe('StationsService', () => {
         }),
       );
     });
+
+    it('should filter CNG stations by station type', async () => {
+      mockPrismaService.station.findMany.mockResolvedValue([]);
+      mockPrismaService.favorite.findMany.mockResolvedValue([]);
+
+      await service.findAll({ stationType: 'CNG' as never, limit: 20 });
+
+      expect(mockPrismaService.station.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            stationType: 'CNG',
+          }),
+        }),
+      );
+    });
+
+    it('should include CNG metadata in station cards', async () => {
+      const cngStation = {
+        ...mockStation,
+        stationType: 'CNG',
+        pricing: { perScm: 320, currency: 'NGN' },
+        cngDetails: {
+          dispenserCount: 4,
+          pressureRating: '200 bar',
+          paymentMethods: ['cash', 'card', 'transfer'],
+          availabilityStatus: 'AVAILABLE',
+        },
+        ports: [],
+        images: [],
+      };
+      mockPrismaService.station.findMany.mockResolvedValue([cngStation]);
+      mockPrismaService.favorite.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({ stationType: 'CNG' as never, limit: 20 });
+
+      expect(result.stations[0]).toEqual(
+        expect.objectContaining({
+          stationType: 'CNG',
+          priceText: '₦320/scm',
+          cngDetails: expect.objectContaining({
+            dispenserCount: 4,
+            availabilityStatus: 'AVAILABLE',
+          }),
+        }),
+      );
+    });
   });
 
   // ============================================================================
@@ -215,7 +270,39 @@ describe('StationsService', () => {
       expect(result).toHaveProperty('name', mockStation.name);
       expect(result).toHaveProperty('ports');
       expect(result).toHaveProperty('images');
+      expect(result).toHaveProperty('stationType', 'EV');
       expect(result.isFavorite).toBe(false);
+    });
+
+    it('should return CNG details without requiring EV ports', async () => {
+      const stationWithRelations = {
+        ...mockStation,
+        stationType: 'CNG',
+        pricing: { perScm: 320, currency: 'NGN' },
+        cngDetails: {
+          dispenserCount: 4,
+          availabilityStatus: 'AVAILABLE',
+        },
+        network: mockNetwork,
+        ports: [],
+        images: [mockImage],
+      };
+      mockPrismaService.station.findFirst.mockResolvedValue(stationWithRelations);
+      mockPrismaService.favorite.findUnique.mockResolvedValue(null);
+
+      const result = await service.findById('station-123');
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          stationType: 'CNG',
+          priceText: '₦320/scm',
+          ports: [],
+          cngDetails: expect.objectContaining({
+            dispenserCount: 4,
+            availabilityStatus: 'AVAILABLE',
+          }),
+        }),
+      );
     });
 
     it('should include favorite status for authenticated user', async () => {
@@ -265,7 +352,7 @@ describe('StationsService', () => {
       );
       expect(result.reviews).toHaveLength(1);
       expect(result.reviews[0]).toHaveProperty('id', 'review-123');
-      expect(result.reviews[0]).toHaveProperty('user');
+      expect(result.reviews[0]).toHaveProperty('anonHandle', 'QuietVoltDriver');
     });
 
     it('should return nextCursor when more results exist', async () => {
@@ -311,6 +398,7 @@ describe('StationsService', () => {
           stationId: 'station-123',
           rating: createReviewDto.rating,
           comment: createReviewDto.comment,
+          anonHandle: 'QuietVoltDriver',
         },
       });
       expect(mockPrismaService.station.update).toHaveBeenCalled(); // Rating aggregation

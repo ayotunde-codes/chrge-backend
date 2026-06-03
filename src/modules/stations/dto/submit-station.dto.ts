@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConnectorType, ChargerType } from '@prisma/client';
+import { ConnectorType, ChargerType, StationType } from '@prisma/client';
 
 export class SubmitPortDto {
   @ApiProperty({ example: 'CCS2', enum: ConnectorType })
@@ -65,6 +65,11 @@ export class SubmitStationDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  @ApiPropertyOptional({ example: 'CNG', enum: StationType, default: 'EV' })
+  @IsOptional()
+  @IsEnum(StationType)
+  stationType?: StationType;
 
   @ApiProperty({ example: '14 Herbert Macaulay Way' })
   @IsString()
@@ -141,6 +146,19 @@ export class SubmitStationDto {
   @IsOptional()
   @IsObject()
   pricing?: { perKwh?: number; perMinute?: number; sessionFee?: number; currency: string };
+
+  @ApiPropertyOptional({
+    example: {
+      dispenserCount: 4,
+      pressureRating: '200 bar',
+      paymentMethods: ['cash', 'card', 'transfer'],
+      availabilityStatus: 'AVAILABLE',
+    },
+    description: 'CNG-specific discovery metadata',
+  })
+  @IsOptional()
+  @IsObject()
+  cngDetails?: Record<string, unknown>;
 
   @ApiPropertyOptional({ example: '+234 801 234 5678' })
   @IsOptional()
