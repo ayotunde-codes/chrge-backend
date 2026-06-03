@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConnectorType, PortStatus } from '@prisma/client';
+import { ConnectorType, PortStatus, StationType } from '@prisma/client';
 
 export class NearbyStationsDto {
   @ApiProperty({ example: 6.5244, description: 'Latitude' })
@@ -42,6 +42,15 @@ export class NearbyStationsDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  @ApiPropertyOptional({
+    example: 'CNG',
+    description: 'Filter by station discovery type',
+    enum: StationType,
+  })
+  @IsOptional()
+  @IsEnum(StationType)
+  stationType?: StationType;
 
   @ApiPropertyOptional({
     example: ['CCS2', 'TYPE2'],
@@ -85,7 +94,6 @@ export class NearbyStationsDto {
   @IsString()
   cursor?: string;
 }
-
 
 
 

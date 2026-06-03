@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { VehicleBrand, VehicleModel, Station, Port, StationImage } from '@prisma/client';
+import { VehicleBrand, VehicleModel, Station, Port, StationImage, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateVehicleBrandDto,
@@ -90,6 +90,7 @@ export class AdminService {
       data: {
         name: dto.name,
         description: dto.description,
+        stationType: dto.stationType ?? 'EV',
         address: dto.address,
         city: dto.city,
         state: dto.state,
@@ -105,6 +106,7 @@ export class AdminService {
         operatingHours: dto.operatingHours,
         amenities: dto.amenities || [],
         pricing: dto.pricing,
+        cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
         phoneNumber: dto.phoneNumber,
         email: dto.email,
         networkId: dto.networkId,
@@ -144,6 +146,7 @@ export class AdminService {
       data: {
         name: dto.name,
         description: dto.description,
+        stationType: dto.stationType,
         address: dto.address,
         city: dto.city,
         state: dto.state,
@@ -157,6 +160,7 @@ export class AdminService {
         operatingHours: dto.operatingHours,
         amenities: dto.amenities,
         pricing: dto.pricing,
+        cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
         phoneNumber: dto.phoneNumber,
         email: dto.email,
         networkId: dto.networkId,
@@ -280,7 +284,5 @@ export class AdminService {
     });
   }
 }
-
-
 
 

@@ -15,7 +15,7 @@ import {
   IsDateString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { ConnectorType, ChargerType, PortStatus, PowertrainType } from '@prisma/client';
+import { ConnectorType, ChargerType, PortStatus, PowertrainType, StationType } from '@prisma/client';
 
 // ============================================================================
 // VEHICLE BRAND DTOs
@@ -153,6 +153,11 @@ export class CreateStationDto {
   @MaxLength(2000)
   description?: string;
 
+  @ApiPropertyOptional({ example: 'CNG', enum: StationType, default: 'EV' })
+  @IsOptional()
+  @IsEnum(StationType)
+  stationType?: StationType;
+
   @ApiProperty({ example: '123 Admiralty Way' })
   @IsString()
   @MaxLength(500)
@@ -229,6 +234,19 @@ export class CreateStationDto {
   @IsObject()
   pricing?: { perKwh?: number; perMinute?: number; sessionFee?: number; currency: string };
 
+  @ApiPropertyOptional({
+    example: {
+      dispenserCount: 4,
+      pressureRating: '200 bar',
+      paymentMethods: ['cash', 'card', 'transfer'],
+      availabilityStatus: 'AVAILABLE',
+    },
+    description: 'CNG-specific discovery metadata',
+  })
+  @IsOptional()
+  @IsObject()
+  cngDetails?: Record<string, unknown>;
+
   @ApiPropertyOptional({ example: '+234 801 234 5678' })
   @IsOptional()
   @IsString()
@@ -258,6 +276,8 @@ export class StationResponseDto {
   @ApiProperty() longitude: number;
   @ApiProperty() isActive: boolean;
   @ApiProperty() isVerified: boolean;
+  @ApiProperty() stationType: string;
+  @ApiPropertyOptional() cngDetails: Record<string, unknown> | null;
   @ApiProperty() createdAt: Date;
 }
 
@@ -363,7 +383,6 @@ export class PortResponseDto {
   @ApiPropertyOptional() portNumber: string | null;
   @ApiProperty() createdAt: Date;
 }
-
 
 
 

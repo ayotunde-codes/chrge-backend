@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma } from '@prisma/client';
+import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma, StationType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
@@ -43,7 +43,18 @@ interface StationPricing {
   perKwh?: number;
   perMinute?: number;
   sessionFee?: number;
+  perScm?: number;
+  perKg?: number;
+  perLitre?: number;
   currency: string;
+}
+
+interface CngDetails {
+  dispenserCount?: number;
+  pressureRating?: string;
+  paymentMethods?: string[];
+  availabilityStatus?: string;
+  safetyCertification?: string;
 }
 
 @Injectable()
@@ -129,6 +140,7 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."stationType" as station_type,
         s.address,
         s.area,
         s.city,
@@ -143,6 +155,7 @@ export class StationsService {
         s."operatingHours" as operating_hours,
         s.amenities,
         s.pricing,
+        s."cngDetails" as cng_details,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -161,6 +174,7 @@ export class StationsService {
       FROM stations s
       WHERE s."isActive" = true
         AND s."deletedAt" IS NULL
+        ${dto.stationType ? Prisma.sql`AND s."stationType" = CAST(${dto.stationType} AS "StationType")` : Prisma.sql``}
         AND (
           6371 * acos(
             cos(radians(${dto.lat})) * cos(radians(s.latitude)) *
@@ -261,6 +275,7 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."stationType" as station_type,
         s.address,
         s.area,
         s.city,
@@ -275,6 +290,7 @@ export class StationsService {
         s."operatingHours" as operating_hours,
         s.amenities,
         s.pricing,
+        s."cngDetails" as cng_details,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -389,6 +405,10 @@ export class StationsService {
       ];
     }
 
+    if (dto.stationType) {
+      where.stationType = dto.stationType;
+    }
+
     if (dto.connectors?.length || dto.status?.length || dto.minPowerKw) {
       where.ports = {
         some: {
@@ -437,6 +457,7 @@ export class StationsService {
           id: s.id,
           name: s.name,
           description: s.description,
+          station_type: s.stationType ?? 'EV',
           address: s.address,
           area: (s as unknown as { area?: string | null }).area ?? null,
           city: s.city,
@@ -451,6 +472,7 @@ export class StationsService {
           operating_hours: s.operatingHours,
           amenities: s.amenities,
           pricing: s.pricing,
+          cng_details: s.cngDetails,
           phone_number: s.phoneNumber,
           total_ports: s.totalPorts,
           available_ports: s.availablePorts,
@@ -686,6 +708,7 @@ export class StationsService {
           id: f.station.id,
           name: f.station.name,
           description: f.station.description,
+          station_type: f.station.stationType ?? 'EV',
           address: f.station.address,
           area: (f.station as unknown as { area?: string | null }).area ?? null,
           city: f.station.city,
@@ -700,6 +723,7 @@ export class StationsService {
           operating_hours: f.station.operatingHours,
           amenities: f.station.amenities,
           pricing: f.station.pricing,
+          cng_details: f.station.cngDetails,
           phone_number: f.station.phoneNumber,
           total_ports: f.station.totalPorts,
           available_ports: f.station.availablePorts,
@@ -727,6 +751,7 @@ export class StationsService {
         data: {
           name: dto.name,
           description: dto.description,
+          stationType: dto.stationType ?? 'EV',
           address: dto.address,
           area: dto.area,
           city: dto.city,
@@ -739,6 +764,7 @@ export class StationsService {
           operatingHours: dto.operatingHours ?? undefined,
           amenities: dto.amenities ?? [],
           pricing: dto.pricing ?? undefined,
+          cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
           phoneNumber: dto.phoneNumber,
           networkId: dto.networkId,
           submittedBy: userId,
@@ -807,9 +833,10 @@ export class StationsService {
     return stations.map((s) => {
       const stationData: StationWithDistance = {
         id: s.id,
-        name: s.name,
-        description: s.description,
-        address: s.address,
+          name: s.name,
+          description: s.description,
+          station_type: s.stationType ?? 'EV',
+          address: s.address,
         area: (s as unknown as { area?: string | null }).area ?? null,
         city: s.city,
         state: s.state,
@@ -821,9 +848,10 @@ export class StationsService {
         is_active: s.isActive,
         is_verified: s.isVerified,
         operating_hours: s.operatingHours,
-        amenities: s.amenities,
-        pricing: s.pricing,
-        phone_number: s.phoneNumber,
+          amenities: s.amenities,
+          pricing: s.pricing,
+          cng_details: s.cngDetails,
+          phone_number: s.phoneNumber,
         total_ports: s.totalPorts,
         available_ports: s.availablePorts,
         avg_rating: s.avgRating,
@@ -927,7 +955,12 @@ export class StationsService {
 
   private buildStatusSummary(
     ports: { status: PortStatus }[],
+    cngDetails?: CngDetails | null,
   ): 'AVAILABLE' | 'IN_USE' | 'OUT_OF_SERVICE' {
+    if (!ports.length && cngDetails?.availabilityStatus) {
+      if (cngDetails.availabilityStatus === 'AVAILABLE') return 'AVAILABLE';
+      if (cngDetails.availabilityStatus === 'IN_USE') return 'IN_USE';
+    }
     if (!ports.length) return 'OUT_OF_SERVICE';
     const available = ports.filter((p) => p.status === 'AVAILABLE').length;
     if (available > 0) return 'AVAILABLE';
@@ -957,6 +990,9 @@ export class StationsService {
     if (!pricing) return null;
     const parts: string[] = [];
     if (pricing.perKwh) parts.push(`₦${pricing.perKwh}/kWh`);
+    if (pricing.perScm) parts.push(`₦${pricing.perScm}/scm`);
+    if (pricing.perKg) parts.push(`₦${pricing.perKg}/kg`);
+    if (pricing.perLitre) parts.push(`₦${pricing.perLitre}/litre`);
     if (pricing.perMinute) parts.push(`₦${pricing.perMinute}/min`);
     if (pricing.sessionFee) parts.push(`₦${pricing.sessionFee} session`);
     return parts.join(' + ') || null;
@@ -972,6 +1008,7 @@ export class StationsService {
     const availableCount = ports.filter((p) => p.status === 'AVAILABLE').length;
     const totalCount = ports.length;
     const pricing = station.pricing as StationPricing | null;
+    const cngDetails = station.cng_details as CngDetails | null;
     const allImages = heroImageUrl
       ? [heroImageUrl, ...extraImages.filter((u) => u !== heroImageUrl)]
       : extraImages;
@@ -979,6 +1016,7 @@ export class StationsService {
     return {
       id: station.id,
       name: station.name,
+      stationType: station.station_type ?? 'EV',
       address: station.address,
       area: station.area ?? null,
       city: station.city,
@@ -992,10 +1030,11 @@ export class StationsService {
       isOpenNow: this.isStationOpen(station),
       openingHoursText: this.buildOpeningHoursText(station),
       priceText: this.buildPriceText(pricing),
-      statusSummary: this.buildStatusSummary(ports),
+      statusSummary: this.buildStatusSummary(ports, cngDetails),
       portsAvailableCount: availableCount,
       portsTotalCount: totalCount,
       connectors: this.buildConnectorSummary(ports),
+      cngDetails,
       amenities: (station.amenities as string[]) || [],
       updatedAt: (station.last_status_update || station.updated_at)?.toISOString() ?? null,
       isFavorite,
@@ -1011,6 +1050,8 @@ export class StationsService {
     isFavorite: boolean,
   ): StationDetailResult {
     const asRaw = station as unknown as StationWithDistance;
+    asRaw.station_type = (station as unknown as { stationType?: StationType }).stationType ?? 'EV';
+    asRaw.cng_details = (station as unknown as { cngDetails?: unknown }).cngDetails ?? null;
     const isOpenNow = this.isStationOpen(asRaw);
 
     // Calculate minutes remaining for in-use ports
@@ -1038,10 +1079,12 @@ export class StationsService {
     });
 
     const pricing = station.pricing as StationPricing | null;
+    const cngDetails = station.cngDetails as CngDetails | null;
 
     return {
       id: station.id,
       name: station.name,
+      stationType: (station as unknown as { stationType?: StationType }).stationType ?? 'EV',
       description: station.description,
       address: station.address,
       area: (station as unknown as { area?: string | null }).area ?? null,
@@ -1059,6 +1102,7 @@ export class StationsService {
       amenities: (station.amenities as string[]) || [],
       priceText: this.buildPriceText(pricing),
       pricing,
+      cngDetails,
       phoneNumber: station.phoneNumber,
       network: station.network || null,
       images: station.images.map((img) => ({
@@ -1071,7 +1115,7 @@ export class StationsService {
       availablePorts: station.availablePorts,
       rating: station.avgRating,
       reviewCount: station.reviewCount,
-      statusSummary: this.buildStatusSummary(station.ports),
+      statusSummary: this.buildStatusSummary(station.ports, cngDetails),
       portsAvailableCount: station.availablePorts,
       portsTotalCount: station.totalPorts,
       connectors: this.buildConnectorSummary(station.ports),
@@ -1103,6 +1147,7 @@ interface StationWithDistance {
   id: string;
   name: string;
   description: string | null;
+  station_type: StationType;
   address: string;
   area?: string | null;
   city: string;
@@ -1117,6 +1162,7 @@ interface StationWithDistance {
   operating_hours: unknown;
   amenities: unknown;
   pricing: unknown;
+  cng_details: unknown;
   phone_number: string | null;
   total_ports: number;
   available_ports: number;
@@ -1137,6 +1183,7 @@ interface ConnectorSummary {
 interface StationCardResult {
   id: string;
   name: string;
+  stationType: StationType;
   address: string;
   area: string | null;
   city: string;
@@ -1154,6 +1201,7 @@ interface StationCardResult {
   portsAvailableCount: number;
   portsTotalCount: number;
   connectors: ConnectorSummary[];
+  cngDetails: CngDetails | null;
   amenities: string[];
   updatedAt: string | null;
   isFavorite: boolean;
@@ -1162,6 +1210,7 @@ interface StationCardResult {
 interface StationDetailResult {
   id: string;
   name: string;
+  stationType: StationType;
   description: string | null;
   address: string;
   area: string | null;
@@ -1179,6 +1228,7 @@ interface StationDetailResult {
   amenities: string[];
   priceText: string | null;
   pricing: StationPricing | null;
+  cngDetails: CngDetails | null;
   phoneNumber: string | null;
   network: { id: string; name: string; logoUrl: string | null; website: string | null; phoneNumber: string | null } | null;
   images: { id: string; url: string; caption: string | null }[];

@@ -192,6 +192,8 @@ export class AdminController {
     longitude: number;
     isActive: boolean;
     isVerified: boolean;
+    stationType?: string;
+    cngDetails?: unknown;
     createdAt: Date;
   }): StationResponseDto {
     return {
@@ -205,6 +207,8 @@ export class AdminController {
       longitude: station.longitude,
       isActive: station.isActive,
       isVerified: station.isVerified,
+      stationType: station.stationType ?? 'EV',
+      cngDetails: (station.cngDetails as Record<string, unknown> | null) ?? null,
       createdAt: station.createdAt,
     };
   }
@@ -231,7 +235,5 @@ export class AdminController {
     };
   }
 }
-
-
 
 

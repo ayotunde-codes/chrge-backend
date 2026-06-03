@@ -66,6 +66,12 @@ enum StationStatus {
   REJECTED
 }
 
+enum StationType {
+  EV
+  CNG
+  HYBRID
+}
+
 // ============================================================================
 // USER & AUTH
 // ============================================================================
@@ -211,6 +217,7 @@ model Station {
   networkId       String?
   name            String
   description     String?
+  stationType     StationType @default(EV)
   
   // Location
   address         String
@@ -241,6 +248,9 @@ model Station {
   
   // Pricing (JSON: { "perKwh": 350, "perMinute": null, "sessionFee": 500, "currency": "NGN" })
   pricing         Json?
+
+  // CNG-specific metadata (JSON: { "dispenserCount": 4, "pressureRating": "200 bar", "paymentMethods": ["cash", "card"], "availabilityStatus": "AVAILABLE" })
+  cngDetails      Json?
   
   // Contact
   phoneNumber     String?
@@ -270,6 +280,7 @@ model Station {
   @@index([latitude, longitude])
   @@index([city, state])
   @@index([isActive])
+  @@index([stationType])
   @@index([avgRating])
   @@map("stations")
 }

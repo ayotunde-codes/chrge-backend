@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConnectorType } from '@prisma/client';
 
 import { VehiclesService } from './vehicles.service';
@@ -25,6 +26,12 @@ describe('VehiclesService', () => {
       updateMany: jest.fn(),
       count: jest.fn(),
     },
+  };
+
+  const mockCacheManager = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
   };
 
   const mockBrand = {
@@ -66,7 +73,11 @@ describe('VehiclesService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [VehiclesService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        VehiclesService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
+      ],
     }).compile();
 
     service = module.get<VehiclesService>(VehiclesService);
