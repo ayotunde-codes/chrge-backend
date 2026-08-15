@@ -45,15 +45,16 @@ export enum CngFinancingPlan {
   Bronze = 'bronze',
 }
 
-export const CNG_PACKAGE_IDS = ['A', 'B', 'C'] as const;
+export const CNG_PACKAGE_IDS = ['A', 'B', 'C', 'D'] as const;
 
 export const CNG_PACKAGES: Record<
   (typeof CNG_PACKAGE_IDS)[number],
   { name: string; tank: string; priceNgn: number }
 > = {
-  A: { name: 'Package A', tank: '9 Litre Tank', priceNgn: 85000 },
-  B: { name: 'Package B', tank: '12 Litre Tank', priceNgn: 110000 },
-  C: { name: 'Package C', tank: '15 Litre Tank', priceNgn: 140000 },
+  A: { name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 85000 },
+  B: { name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 110000 },
+  C: { name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 140000 },
+  D: { name: 'Max 100', tank: '100 Litre Tank', priceNgn: 200000 },
 };
 
 export const CNG_FINANCING_PLANS: Record<
