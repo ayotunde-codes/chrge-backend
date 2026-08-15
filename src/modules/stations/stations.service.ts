@@ -11,7 +11,6 @@ import { AllStationsDto } from './dto/all-stations.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { SubmitStationDto } from './dto/submit-station.dto';
 
-const TTL_2_MIN = 2 * 60 * 1000;
 const TTL_5_MIN = 5 * 60 * 1000;
 
 type StationDetail = Prisma.StationGetPayload<{
@@ -256,12 +255,6 @@ export class StationsService {
     const cacheKey = `stations:top-picks:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
     const cached = await this.cache.get<StationCardResult[]>(cacheKey);
     if (cached) return cached;
-
-    // Get user's primary vehicle connector type
-    let userConnector: ConnectorType | null = null;
-    if (userId) {
-      userConnector = await this.vehiclesService.getPrimaryVehicleConnector(userId);
-    }
 
     // Fetch stations with scoring heuristic:
     // - Has image

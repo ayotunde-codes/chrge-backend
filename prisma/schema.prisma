@@ -72,6 +72,15 @@ enum StationType {
   HYBRID
 }
 
+enum CngApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 // ============================================================================
 // USER & AUTH
 // ============================================================================
@@ -98,6 +107,8 @@ model User {
   favorites         Favorite[]
   reviews           Review[]
   submittedStations Station[]     @relation("SubmittedStations")
+  cngApplications         CngApplication[] @relation("CngApplicant")
+  reviewedCngApplications CngApplication[] @relation("CngReviewer")
 
   @@index([email])
   @@index([providerId])
@@ -375,4 +386,135 @@ model Review {
   @@index([stationId, createdAt])
   @@index([userId])
   @@map("reviews")
+}
+
+// ============================================================================
+// CNG FINANCING APPLICATIONS
+// ============================================================================
+
+model CngApplication {
+  id              String               @id @default(uuid())
+  reference       String               @unique
+  accessTokenHash String               @unique
+  userId          String?
+  status          CngApplicationStatus @default(DRAFT)
+
+  // Personal details
+  firstName       String?
+  middleName      String?
+  lastName        String?
+  gender          String?
+  dateOfBirth     DateTime?
+  maritalStatus   String?
+  email           String?
+  phone           String?
+  phoneVerifiedAt DateTime?
+  bvnEncrypted    String?
+  bvnHash         String?
+  bvnLast4        String?
+  ninEncrypted    String?
+  ninHash         String?
+  ninLast4        String?
+
+  // Employment and address
+  currentlyEmployed          Boolean?
+  employmentStatus           String?
+  employmentSector           String?
+  employerName               String?
+  occupationJobTitle         String?
+  monthlyIncome              String?
+  employmentStartDate        DateTime?
+  employmentConfirmationDate DateTime?
+  address                    String?
+  state                      String?
+  lga                        String?
+  nextOfKinName              String?
+  nextOfKinPhone             String?
+  nextOfKinRelationship      String?
+  personalCompletedAt        DateTime?
+
+  // Vehicle details
+  vehicleBrand       String?
+  vehicleModel       String?
+  vehicleYear        Int?
+  manufacturingDate  DateTime?
+  vehicleColor       String?
+  mileage            String?
+  fuelSystem         String?
+  engineType         String?
+  licensePlate       String?
+  chassisNumber      String?
+  engineNumber       String?
+  vehicleCompletedAt DateTime?
+
+  // Financing selection and immutable quote snapshot
+  packageId            String?
+  financingPlanId      String?
+  preferredLoanTenor   Int?
+  packagePriceNgn      Int?
+  depositAmountNgn     Int?
+  financedAmountNgn    Int?
+  interestAmountNgn    Int?
+  monthlyPaymentNgn    Int?
+  totalCostNgn         Int?
+  privacyConsentAt     DateTime?
+  privacyPolicyVersion String?
+  financingCompletedAt DateTime?
+
+  // Workflow metadata
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  reviewNote      String?
+  rejectionReason String?
+  cancelledAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  applicant          User?                    @relation("CngApplicant", fields: [userId], references: [id], onDelete: SetNull)
+  reviewer           User?                    @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documents          CngApplicationDocument[]
+  phoneVerifications CngPhoneVerification[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([phone])
+  @@index([bvnHash])
+  @@index([ninHash])
+  @@map("cng_applications")
+}
+
+model CngApplicationDocument {
+  id             String   @id @default(uuid())
+  applicationId  String
+  type           String
+  originalName   String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  checksumSha256 String
+  uploadedAt     DateTime @default(now())
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, type])
+  @@index([applicationId])
+  @@map("cng_application_documents")
+}
+
+model CngPhoneVerification {
+  id            String    @id @default(uuid())
+  applicationId String
+  phone         String
+  codeHash      String
+  attempts      Int       @default(0)
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, phone, createdAt])
+  @@index([expiresAt])
+  @@map("cng_phone_verifications")
 }

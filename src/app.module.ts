@@ -14,6 +14,7 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { StationsModule } from './modules/stations/stations.module';
 import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { CngApplicationsModule } from './modules/cng-applications/cng-applications.module';
 import { appConfig, validateEnv } from './config/app.config';
 
 @Module({
@@ -61,6 +62,7 @@ import { appConfig, validateEnv } from './config/app.config';
     StationsModule,
     HealthModule,
     AdminModule,
+    CngApplicationsModule,
   ],
   providers: [
     {
@@ -70,4 +72,3 @@ import { appConfig, validateEnv } from './config/app.config';
   ],
 })
 export class AppModule {}
-
