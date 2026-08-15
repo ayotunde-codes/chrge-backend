@@ -35,6 +35,8 @@ prisma/*.db-journal
 # Test
 test-results/
 
+# Private applicant uploads
+private-uploads/
 
 
 

@@ -42,16 +42,20 @@ services:
       PORT: 3000
       API_PREFIX: api/v1
       DATABASE_URL: postgresql://chrge:chrge_secret@postgres:5432/chrge_dev?schema=public
+      DIRECT_URL: postgresql://chrge:chrge_secret@postgres:5432/chrge_dev?schema=public
       REDIS_URL: redis://redis:6379
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_ACCESS_EXPIRATION: 15m
       JWT_REFRESH_EXPIRATION: 30d
       REFRESH_TOKEN_PEPPER: your-super-secret-refresh-token-pepper-change-in-production
-      CORS_ORIGINS: http://localhost:3000,http://localhost:3001
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002
       THROTTLE_TTL: 60000
       THROTTLE_LIMIT: 100
       AUTH_THROTTLE_TTL: 60000
       AUTH_THROTTLE_LIMIT: 10
+      CNG_DOCUMENT_STORAGE_PATH: private-uploads/cng-applications
+    volumes:
+      - chrge_private_uploads:/app/private-uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,4 +92,4 @@ volumes:
   chrge_postgres_data:
   chrge_postgres_test_data:
   chrge_redis_data:
-
+  chrge_private_uploads:

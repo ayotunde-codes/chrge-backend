@@ -36,6 +36,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         if (Array.isArray(responseObj.message)) {
           errors = responseObj.message as string[];
           message = 'Validation failed';
+        } else if (Array.isArray(responseObj.errors)) {
+          errors = responseObj.errors as string[];
         }
       } else {
         message = exception.message;
@@ -65,7 +67,3 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json(errorResponse);
   }
 }
-
-
-
-

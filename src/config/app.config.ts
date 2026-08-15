@@ -72,6 +72,22 @@ export class EnvironmentVariables {
   @IsNumber()
   @IsOptional()
   AUTH_THROTTLE_LIMIT: number = 10;
+
+  @IsString()
+  @IsOptional()
+  CNG_APPLICATION_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_DOCUMENT_STORAGE_PATH: string = 'private-uploads/cng-applications';
+
+  @IsString()
+  @IsOptional()
+  CNG_OTP_WEBHOOK_URL: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_OTP_WEBHOOK_TOKEN: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -118,8 +134,11 @@ export const appConfig = () => ({
     authTtl: parseInt(process.env.AUTH_THROTTLE_TTL || '60000', 10),
     authLimit: parseInt(process.env.AUTH_THROTTLE_LIMIT || '10', 10),
   },
+  cngApplications: {
+    encryptionKey: process.env.CNG_APPLICATION_ENCRYPTION_KEY,
+    documentStoragePath:
+      process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
+    otpWebhookUrl: process.env.CNG_OTP_WEBHOOK_URL,
+    otpWebhookToken: process.env.CNG_OTP_WEBHOOK_TOKEN,
+  },
 });
-
-
-
-

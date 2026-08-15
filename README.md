@@ -22,6 +22,7 @@ Production-ready NestJS backend for the CHRGE EV Charging Station Platform - Nig
 - **Favorites**: Save favorite stations
 - **Reviews**: Rate and review stations
 - **Admin Dashboard**: Manual station/port management
+- **CNG Financing Applications**: Resumable applicant intake, private documents, phone verification, consent, and staff review
 
 ## Quick Start
 
@@ -102,6 +103,10 @@ Access:
 | POST | `/admin/stations/:id/images` | Add station image |
 | POST | `/admin/stations/:id/ports` | Add port to station |
 | PATCH | `/admin/ports/:id` | Update port status |
+
+### CNG Financing Applications
+
+See [docs/cng-application-api.md](docs/cng-application-api.md) for the complete applicant and administrative workflow.
 
 ## Query Parameters
 
@@ -210,6 +215,10 @@ src/
 | `GOOGLE_CLIENT_ID_IOS` | Google OAuth iOS Client ID | Optional |
 | `GOOGLE_CLIENT_ID_ANDROID` | Google OAuth Android Client ID | Optional |
 | `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
+| `CNG_APPLICATION_ENCRYPTION_KEY` | Dedicated key material for CNG applicant identity encryption | Falls back to `JWT_SECRET` |
+| `CNG_DOCUMENT_STORAGE_PATH` | Private CNG document storage directory | `private-uploads/cng-applications` |
+| `CNG_OTP_WEBHOOK_URL` | Optional SMS provider adapter webhook | Development code returned when unset outside production |
+| `CNG_OTP_WEBHOOK_TOKEN` | Optional bearer token for the SMS webhook | - |
 
 ## Scripts
 

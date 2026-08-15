@@ -31,6 +31,8 @@ async function generateOpenApiSpec() {
     .addTag('users', 'User management endpoints')
     .addTag('vehicles', 'Vehicle management endpoints')
     .addTag('stations', 'Charging station endpoints')
+    .addTag('cng-applications', 'CNG conversion financing application endpoints')
+    .addTag('admin-cng-applications', 'Administrative CNG application review endpoints')
     .addTag('admin', 'Admin endpoints')
     .addTag('health', 'Health check endpoints')
     .build();
@@ -45,5 +47,3 @@ async function generateOpenApiSpec() {
 }
 
 generateOpenApiSpec();
-
-

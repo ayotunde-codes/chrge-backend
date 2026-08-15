@@ -80,6 +80,8 @@ async function bootstrap() {
     .addTag('users', 'User management endpoints')
     .addTag('vehicles', 'Vehicle management endpoints')
     .addTag('stations', 'Charging station endpoints')
+    .addTag('cng-applications', 'CNG conversion financing application endpoints')
+    .addTag('admin-cng-applications', 'Administrative CNG application review endpoints')
     .addTag('health', 'Health check endpoints')
     .build();
 
