@@ -395,8 +395,7 @@ model Review {
 model CngApplication {
   id              String               @id @default(uuid())
   reference       String               @unique
-  accessTokenHash String               @unique
-  userId          String?
+  userId          String
   status          CngApplicationStatus @default(DRAFT)
 
   // Personal details
@@ -471,7 +470,7 @@ model CngApplication {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  applicant          User?                    @relation("CngApplicant", fields: [userId], references: [id], onDelete: SetNull)
+  applicant          User                     @relation("CngApplicant", fields: [userId], references: [id], onDelete: Cascade)
   reviewer           User?                    @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
   documents          CngApplicationDocument[]
   phoneVerifications CngPhoneVerification[]

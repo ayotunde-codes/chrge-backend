@@ -4,9 +4,9 @@ All endpoints use the global `/api/v1` prefix.
 
 ## Access model
 
-`POST /cng/applications` creates a draft and returns an `accessToken` once. An anonymous client must retain that token and send it as `X-Application-Token` on subsequent requests for the same application.
+Every applicant endpoint except configuration requires a bearer access token. `POST /cng/applications` creates a draft owned by the signed-in user, and every later read or write verifies that the same user owns the application. A user may own multiple applications.
 
-Signed-in applicants can use their bearer token instead. An anonymous application can be attached to a signed-in account with `POST /cng/applications/:id/claim`, using both the bearer token and the application token.
+During migration, legacy anonymous applications are matched to existing accounts by applicant email. Unmatched records are preserved under a non-login recovery owner for administrative reconciliation.
 
 Application documents are private. They are not served from the public `/uploads` path and can only be downloaded through the authorized download endpoint.
 
@@ -15,7 +15,7 @@ The configured storage directory must be backed by a persistent volume in deploy
 ## Recommended integration sequence
 
 1. Read available packages, plans, and document rules with `GET /cng/applications/configuration`.
-2. Create a draft with `POST /cng/applications` and retain `id` plus `accessToken`.
+2. Sign in, create a draft with `POST /cng/applications`, and retain its `id` for the application flow.
 3. Request and verify the applicant phone number.
 4. Save Personal Details with `PATCH /cng/applications/:id/personal`.
 5. Save Vehicle Details with `PATCH /cng/applications/:id/vehicle`.
@@ -31,10 +31,9 @@ Every step save returns the current application and progress state, so the clien
 | Method | Endpoint                                           | Purpose                                                     |
 | ------ | -------------------------------------------------- | ----------------------------------------------------------- |
 | GET    | `/cng/applications/configuration`                  | Packages, plans, document rules, and policy version         |
-| POST   | `/cng/applications`                                | Create a draft and one-time application token               |
+| POST   | `/cng/applications`                                | Create a draft owned by the signed-in user                  |
 | GET    | `/cng/applications/me`                             | List applications owned by the signed-in user               |
 | GET    | `/cng/applications/:id`                            | Retrieve a draft or submitted application                   |
-| POST   | `/cng/applications/:id/claim`                      | Attach an anonymous draft to a user account                 |
 | PATCH  | `/cng/applications/:id/personal`                   | Save personal, employment, address, and next-of-kin fields  |
 | POST   | `/cng/applications/:id/phone-verification/request` | Send a six-digit verification code                          |
 | POST   | `/cng/applications/:id/phone-verification/verify`  | Verify the phone number                                     |

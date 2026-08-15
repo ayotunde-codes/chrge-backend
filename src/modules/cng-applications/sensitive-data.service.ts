@@ -56,18 +56,8 @@ export class SensitiveDataService {
     return createHmac('sha256', this.hmacKey).update(value).digest('hex');
   }
 
-  hashAccessToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
-  }
-
   matchesHash(value: string, expectedHash: string): boolean {
     const actual = Buffer.from(this.hash(value), 'hex');
-    const expected = Buffer.from(expectedHash, 'hex');
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
-  }
-
-  matchesAccessToken(token: string, expectedHash: string): boolean {
-    const actual = Buffer.from(this.hashAccessToken(token), 'hex');
     const expected = Buffer.from(expectedHash, 'hex');
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   }

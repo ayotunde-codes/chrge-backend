@@ -34,7 +34,6 @@ async function bootstrap() {
       'Content-Type',
       'Authorization',
       'X-Requested-With',
-      'X-Application-Token',
     ],
   });
 

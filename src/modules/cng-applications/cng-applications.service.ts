@@ -65,22 +65,18 @@ export class CngApplicationsService {
     };
   }
 
-  async createApplication(userId?: string): Promise<Record<string, unknown>> {
-    const accessToken = randomBytes(32).toString('base64url');
-    const accessTokenHash = this.sensitiveData.hashAccessToken(accessToken);
-
+  async createApplication(userId: string): Promise<Record<string, unknown>> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const application = await this.prisma.cngApplication.create({
           data: {
             reference: this.generateReference(),
-            accessTokenHash,
             userId,
           },
           include: { documents: true },
         });
 
-        return { ...this.mapApplication(application), accessToken };
+        return this.mapApplication(application);
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -108,21 +104,6 @@ export class CngApplicationsService {
     });
 
     return applications.map((application) => this.mapApplication(application));
-  }
-
-  async claimApplication(id: string, userId: string): Promise<Record<string, unknown>> {
-    const application = await this.getApplicationRecord(id);
-    if (application.userId && application.userId !== userId) {
-      throw new ConflictException('This application already belongs to another account');
-    }
-
-    const updated = await this.prisma.cngApplication.update({
-      where: { id },
-      data: { userId },
-      include: { documents: true },
-    });
-
-    return this.mapApplication(updated);
   }
 
   async savePersonalDetails(

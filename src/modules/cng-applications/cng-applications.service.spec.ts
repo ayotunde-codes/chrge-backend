@@ -48,7 +48,6 @@ describe('CngApplicationsService', () => {
   const mockSensitive = {
     encrypt: jest.fn((value: string) => `encrypted:${value}`),
     hash: jest.fn((value: string) => `hash:${value}`),
-    hashAccessToken: jest.fn(() => 'access-token-hash'),
     matchesHash: jest.fn(),
   };
   const mockOtpDelivery = {
@@ -82,20 +81,18 @@ describe('CngApplicationsService', () => {
     ]);
   });
 
-  it('creates an anonymous draft and returns its access token only at creation', async () => {
+  it('creates a draft owned by the authenticated user', async () => {
     mockPrisma.cngApplication.create.mockResolvedValue(application);
 
-    const result = await service.createApplication();
+    const result = await service.createApplication('user-123');
 
     expect(mockPrisma.cngApplication.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        accessTokenHash: 'access-token-hash',
-        userId: undefined,
+        userId: 'user-123',
       }),
       include: { documents: true },
     });
-    expect(result.accessToken).toEqual(expect.any(String));
-    expect(result).not.toHaveProperty('accessTokenHash');
+    expect(result).not.toHaveProperty('accessToken');
   });
 
   it('encrypts identity numbers and stores only their masked suffixes in the response', async () => {
@@ -387,8 +384,7 @@ function makeApplication(): ApplicationWithDocuments {
   return {
     id: '4ca36a47-793c-4e20-8ceb-199a99de9c80',
     reference: 'CNG-2026-A1B2C3D4',
-    accessTokenHash: 'access-token-hash',
-    userId: null,
+    userId: 'user-123',
     status: CngApplicationStatus.DRAFT,
     firstName: null,
     middleName: null,
