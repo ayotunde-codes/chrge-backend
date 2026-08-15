@@ -69,6 +69,19 @@ describe('CngApplicationsService', () => {
     application = makeApplication();
   });
 
+  it('returns all four conversion packages in capacity order', () => {
+    const configuration = service.getConfiguration() as {
+      packages: Array<{ id: string; name: string; tank: string; priceNgn: number }>;
+    };
+
+    expect(configuration.packages).toEqual([
+      { id: 'A', name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 85000 },
+      { id: 'B', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 110000 },
+      { id: 'C', name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 140000 },
+      { id: 'D', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 200000 },
+    ]);
+  });
+
   it('creates an anonymous draft and returns its access token only at creation', async () => {
     mockPrisma.cngApplication.create.mockResolvedValue(application);
 
@@ -224,6 +237,46 @@ describe('CngApplicationsService', () => {
           interestAmountNgn: 11000,
           monthlyPaymentNgn: 11000,
           totalCostNgn: 121000,
+        }),
+      }),
+    );
+  });
+
+  it('accepts Max 100 and calculates its financing snapshot', async () => {
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(application);
+    mockPrisma.cngApplication.update.mockResolvedValue({
+      ...application,
+      packageId: 'D',
+      financingPlanId: CngFinancingPlan.Bronze,
+      preferredLoanTenor: 12,
+      packagePriceNgn: 200000,
+      depositAmountNgn: 20000,
+      financedAmountNgn: 180000,
+      interestAmountNgn: 40000,
+      monthlyPaymentNgn: 18333,
+      totalCostNgn: 240000,
+      privacyConsentAt: new Date(),
+      privacyPolicyVersion: '1.0',
+      financingCompletedAt: new Date(),
+    });
+
+    await service.saveFinancingDetails(application.id, {
+      packageId: 'D',
+      financingPlanId: CngFinancingPlan.Bronze,
+      preferredLoanTenor: 12,
+      privacyConsent: true,
+    });
+
+    expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          packageId: 'D',
+          packagePriceNgn: 200000,
+          depositAmountNgn: 20000,
+          financedAmountNgn: 180000,
+          interestAmountNgn: 40000,
+          monthlyPaymentNgn: 18333,
+          totalCostNgn: 240000,
         }),
       }),
     );
