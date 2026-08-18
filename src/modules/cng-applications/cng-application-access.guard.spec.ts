@@ -1,30 +1,21 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
-import { SensitiveDataService } from './sensitive-data.service';
 
 describe('CngApplicationAccessGuard', () => {
   const application = {
     id: '4ca36a47-793c-4e20-8ceb-199a99de9c80',
     userId: 'user-123',
-    accessTokenHash: 'stored-hash',
   };
   const prisma = {
     cngApplication: { findUnique: jest.fn() },
   };
-  const sensitiveData = {
-    matchesAccessToken: jest.fn(),
-  };
-
   let guard: CngApplicationAccessGuard;
 
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.cngApplication.findUnique.mockResolvedValue(application);
-    guard = new CngApplicationAccessGuard(
-      prisma as unknown as PrismaService,
-      sensitiveData as unknown as SensitiveDataService,
-    );
+    guard = new CngApplicationAccessGuard(prisma as unknown as PrismaService);
   });
 
   it('allows the authenticated application owner', async () => {
@@ -33,24 +24,19 @@ describe('CngApplicationAccessGuard', () => {
     await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
   });
 
-  it('allows anonymous access with the one-time application token', async () => {
-    sensitiveData.matchesAccessToken.mockReturnValue(true);
-    const request = makeRequest({ headers: { 'x-application-token': 'application-token' } });
-
-    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
-  });
-
-  it('allows administrative reviewers', async () => {
+  it('rejects a different authenticated user, including an administrator', async () => {
     const request = makeRequest({ user: { sub: 'admin-123', role: 'ADMIN' } });
 
-    await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    await expect(guard.canActivate(makeContext(request))).rejects.toThrow(ForbiddenException);
   });
 
-  it('rejects requests without ownership or a valid application token', async () => {
-    sensitiveData.matchesAccessToken.mockReturnValue(false);
-    const request = makeRequest({});
+  it('rejects an application token when the signed-in user is not the owner', async () => {
+    const request = makeRequest({
+      user: { sub: 'other-user', role: 'USER' },
+      headers: { 'x-application-token': 'legacy-application-token' },
+    });
 
-    await expect(guard.canActivate(makeContext(request))).rejects.toThrow(UnauthorizedException);
+    await expect(guard.canActivate(makeContext(request))).rejects.toThrow(ForbiddenException);
   });
 });
 

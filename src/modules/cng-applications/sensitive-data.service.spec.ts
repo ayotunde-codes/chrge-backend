@@ -23,12 +23,4 @@ describe('SensitiveDataService', () => {
     expect(service.matchesHash('application-value', hash)).toBe(true);
     expect(service.matchesHash('different-value', hash)).toBe(false);
   });
-
-  it('uses a separate access-token hash', () => {
-    const service = new SensitiveDataService(configService as unknown as ConfigService);
-    const tokenHash = service.hashAccessToken('secret-application-token');
-
-    expect(service.matchesAccessToken('secret-application-token', tokenHash)).toBe(true);
-    expect(service.matchesAccessToken('wrong-token', tokenHash)).toBe(false);
-  });
 });

@@ -90,13 +90,6 @@ export class CngApplicationResponseDto {
   updatedAt: Date;
 }
 
-export class CreateCngApplicationResponseDto extends CngApplicationResponseDto {
-  @ApiProperty({
-    description: 'Shown only once. Send this value in X-Application-Token for anonymous access.',
-  })
-  accessToken: string;
-}
-
 export class PhoneVerificationResponseDto {
   @ApiProperty({ example: '+2348012345678' })
   phone: string;

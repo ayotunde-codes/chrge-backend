@@ -25,7 +25,6 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
-  ApiHeader,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -33,7 +32,6 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
 import { CngApplicationsService } from './cng-applications.service';
 import {
@@ -46,12 +44,11 @@ import {
 import {
   CngApplicationDocumentResponseDto,
   CngApplicationResponseDto,
-  CreateCngApplicationResponseDto,
   PhoneVerificationResponseDto,
 } from './dto/cng-application-response.dto';
 import { CNG_DOCUMENTS, isCngDocumentType } from './cng-application.constants';
 
-const APPLICATION_ACCESS_GUARDS = [OptionalJwtAuthGuard, CngApplicationAccessGuard];
+const APPLICATION_ACCESS_GUARDS = [JwtAuthGuard, CngApplicationAccessGuard];
 const STORAGE_ROOT = resolve(
   process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
 );
@@ -68,11 +65,12 @@ export class CngApplicationsController {
   }
 
   @Post()
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a CNG financing application draft' })
-  @ApiResponse({ status: 201, type: CreateCngApplicationResponseDto })
-  async createApplication(@CurrentUser() user?: JwtPayload): Promise<Record<string, unknown>> {
-    return this.cngApplicationsService.createApplication(user?.sub);
+  @ApiResponse({ status: 201, type: CngApplicationResponseDto })
+  async createApplication(@CurrentUser() user: JwtPayload): Promise<Record<string, unknown>> {
+    return this.cngApplicationsService.createApplication(user.sub);
   }
 
   @Get('me')
@@ -86,7 +84,6 @@ export class CngApplicationsController {
 
   @Get(':id')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a CNG application and its completion progress' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
@@ -94,23 +91,8 @@ export class CngApplicationsController {
     return this.cngApplicationsService.getApplication(id);
   }
 
-  @Post(':id/claim')
-  @UseGuards(JwtAuthGuard, CngApplicationAccessGuard)
-  @HttpCode(HttpStatus.OK)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Attach an anonymous application to the signed-in account' })
-  @ApiResponse({ status: 200, type: CngApplicationResponseDto })
-  async claimApplication(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: JwtPayload,
-  ): Promise<Record<string, unknown>> {
-    return this.cngApplicationsService.claimApplication(id, user.sub);
-  }
-
   @Patch(':id/personal')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Save personal, employment, address, and next-of-kin details' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
@@ -125,7 +107,6 @@ export class CngApplicationsController {
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @Throttle({ medium: { limit: 3, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Send a phone verification code' })
   @ApiResponse({ status: 200, type: PhoneVerificationResponseDto })
@@ -140,7 +121,6 @@ export class CngApplicationsController {
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @Throttle({ medium: { limit: 10, ttl: 10 * 60_000 } })
   @HttpCode(HttpStatus.OK)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Verify the applicant phone number' })
   async verifyPhone(
@@ -152,7 +132,6 @@ export class CngApplicationsController {
 
   @Patch(':id/vehicle')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Save vehicle and CNG conversion compatibility details' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
@@ -165,7 +144,6 @@ export class CngApplicationsController {
 
   @Patch(':id/financing')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Save package, financing, loan tenor, and privacy consent' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
@@ -225,7 +203,6 @@ export class CngApplicationsController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Upload or replace one private application document' })
   @ApiResponse({ status: 201, type: CngApplicationDocumentResponseDto })
@@ -242,7 +219,6 @@ export class CngApplicationsController {
   @Delete(':id/documents/:type')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Remove a document from a draft application' })
   async deleteDocument(
@@ -254,7 +230,6 @@ export class CngApplicationsController {
 
   @Get(':id/documents/:type/download')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Download a private application document' })
   async downloadDocument(
@@ -283,7 +258,6 @@ export class CngApplicationsController {
   @Post(':id/submit')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @HttpCode(HttpStatus.OK)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Validate and submit a completed CNG application' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
@@ -296,7 +270,6 @@ export class CngApplicationsController {
   @Post(':id/cancel')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @HttpCode(HttpStatus.OK)
-  @ApiHeader({ name: 'X-Application-Token', required: false })
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Cancel a draft or submitted CNG application' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
