@@ -16,9 +16,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { createReadStream, mkdirSync } from 'fs';
-import { extname, join, resolve } from 'path';
+import { memoryStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
 import {
@@ -49,10 +47,6 @@ import {
 import { CNG_DOCUMENTS, isCngDocumentType } from './cng-application.constants';
 
 const APPLICATION_ACCESS_GUARDS = [JwtAuthGuard, CngApplicationAccessGuard];
-const STORAGE_ROOT = resolve(
-  process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
-);
-
 @ApiTags('cng-applications')
 @Controller('cng/applications')
 export class CngApplicationsController {
@@ -162,26 +156,7 @@ export class CngApplicationsController {
   })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (request, _file, callback) => {
-          const idParam = request.params.id;
-          const applicationId = Array.isArray(idParam) ? idParam[0] : idParam;
-          const directory = join(STORAGE_ROOT, applicationId);
-          mkdirSync(directory, { recursive: true });
-          callback(null, directory);
-        },
-        filename: (_request, file, callback) => {
-          const extensionByMime: Record<string, string> = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'application/pdf': '.pdf',
-          };
-          callback(
-            null,
-            `${randomUUID()}${extensionByMime[file.mimetype] || extname(file.originalname)}`,
-          );
-        },
-      }),
+      storage: memoryStorage(),
       fileFilter: (request, file, callback) => {
         const type = request.params.type;
         if (!isCngDocumentType(type)) {
@@ -212,7 +187,12 @@ export class CngApplicationsController {
     @UploadedFile() file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
     if (!file) throw new BadRequestException('No document file provided');
-    const storageKey = `${id}/${file.filename}`;
+    const extensionByMime: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'application/pdf': '.pdf',
+    };
+    const storageKey = `${id}/${randomUUID()}${extensionByMime[file.mimetype]}`;
     return this.cngApplicationsService.saveDocument(id, type, file, storageKey);
   }
 
@@ -237,10 +217,7 @@ export class CngApplicationsController {
     @Param('type') type: string,
     @Res() response: Response,
   ): Promise<void> {
-    const { document, absolutePath } = await this.cngApplicationsService.getDocumentForDownload(
-      id,
-      type,
-    );
+    const { document, stream } = await this.cngApplicationsService.getDocumentForDownload(id, type);
     response.setHeader('Content-Type', document.mimeType);
     response.setHeader('Content-Length', document.sizeBytes);
     response.setHeader(
@@ -248,7 +225,6 @@ export class CngApplicationsController {
       `attachment; filename*=UTF-8''${encodeURIComponent(document.originalName)}`,
     );
     await new Promise<void>((resolvePromise, rejectPromise) => {
-      const stream = createReadStream(absolutePath);
       stream.on('error', rejectPromise);
       stream.on('end', resolvePromise);
       stream.pipe(response);

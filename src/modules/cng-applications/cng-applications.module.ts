@@ -6,6 +6,7 @@ import { CngApplicationsService } from './cng-applications.service';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
+import { DocumentStorageService } from './document-storage.service';
 
 @Module({
   imports: [ConfigModule],
@@ -15,6 +16,7 @@ import { OtpDeliveryService } from './otp-delivery.service';
     CngApplicationAccessGuard,
     SensitiveDataService,
     OtpDeliveryService,
+    DocumentStorageService,
   ],
   exports: [CngApplicationsService],
 })

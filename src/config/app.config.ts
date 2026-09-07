@@ -43,6 +43,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  REDIS_URL: string = 'redis://localhost:6379';
+
+  @IsString()
+  @IsOptional()
   GOOGLE_CLIENT_ID: string;
 
   @IsString()
@@ -88,6 +92,26 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CNG_OTP_WEBHOOK_TOKEN: string;
+
+  @IsString()
+  @IsOptional()
+  ENABLE_SWAGGER: string = 'false';
+
+  @IsString()
+  @IsOptional()
+  R2_ACCOUNT_ID: string;
+
+  @IsString()
+  @IsOptional()
+  R2_ACCESS_KEY_ID: string;
+
+  @IsString()
+  @IsOptional()
+  R2_SECRET_ACCESS_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  R2_BUCKET: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -101,6 +125,46 @@ export function validateEnv(config: Record<string, unknown>) {
 
   if (errors.length > 0) {
     throw new Error(`Config validation error: ${errors.toString()}`);
+  }
+
+  if (validatedConfig.NODE_ENV === Environment.Production) {
+    const requiredProductionValues: Array<keyof EnvironmentVariables> = [
+      'REDIS_URL',
+      'CNG_APPLICATION_ENCRYPTION_KEY',
+      'R2_ACCOUNT_ID',
+      'R2_ACCESS_KEY_ID',
+      'R2_SECRET_ACCESS_KEY',
+      'R2_BUCKET',
+    ];
+    const missing = requiredProductionValues.filter(
+      (name) => !String(validatedConfig[name] ?? '').trim(),
+    );
+
+    if (missing.length > 0) {
+      throw new Error(`Production configuration is missing: ${missing.join(', ')}`);
+    }
+
+    const secretValues = [
+      ['JWT_SECRET', validatedConfig.JWT_SECRET],
+      ['REFRESH_TOKEN_PEPPER', validatedConfig.REFRESH_TOKEN_PEPPER],
+      ['CNG_APPLICATION_ENCRYPTION_KEY', validatedConfig.CNG_APPLICATION_ENCRYPTION_KEY],
+    ] as const;
+    const weakSecrets = secretValues
+      .filter(([, value]) => !value || value.length < 32)
+      .map(([name]) => name);
+
+    if (weakSecrets.length > 0) {
+      throw new Error(
+        `Production secrets must be at least 32 characters: ${weakSecrets.join(', ')}`,
+      );
+    }
+
+    const origins = validatedConfig.CORS_ORIGINS.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    if (origins.length === 0 || origins.some((origin) => !origin.startsWith('https://'))) {
+      throw new Error('Production CORS_ORIGINS must contain only HTTPS origins');
+    }
   }
 
   return validatedConfig;
@@ -120,6 +184,7 @@ export const appConfig = () => ({
     refreshExpiration: process.env.JWT_REFRESH_EXPIRATION || '30d',
   },
   refreshTokenPepper: process.env.REFRESH_TOKEN_PEPPER,
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientIdIos: process.env.GOOGLE_CLIENT_ID_IOS,
@@ -140,5 +205,14 @@ export const appConfig = () => ({
       process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
     otpWebhookUrl: process.env.CNG_OTP_WEBHOOK_URL,
     otpWebhookToken: process.env.CNG_OTP_WEBHOOK_TOKEN,
+  },
+  swagger: {
+    enabled: process.env.ENABLE_SWAGGER === 'true',
+  },
+  r2: {
+    accountId: process.env.R2_ACCOUNT_ID,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    bucket: process.env.R2_BUCKET,
   },
 });

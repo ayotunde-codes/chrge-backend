@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { CngApplicationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CngApplicationsService } from './cng-applications.service';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
+import { DocumentStorageService } from './document-storage.service';
 import {
   CngEmploymentSector,
   CngEmploymentStatus,
@@ -42,9 +42,6 @@ describe('CngApplicationsService', () => {
     },
     $transaction: jest.fn(),
   };
-  const mockConfig = {
-    get: jest.fn(),
-  };
   const mockSensitive = {
     encrypt: jest.fn((value: string) => `encrypted:${value}`),
     hash: jest.fn((value: string) => `hash:${value}`),
@@ -52,6 +49,11 @@ describe('CngApplicationsService', () => {
   };
   const mockOtpDelivery = {
     send: jest.fn(),
+  };
+  const mockDocumentStorage = {
+    putObject: jest.fn(),
+    getObject: jest.fn(),
+    deleteObject: jest.fn(),
   };
 
   let service: CngApplicationsService;
@@ -61,9 +63,9 @@ describe('CngApplicationsService', () => {
     jest.clearAllMocks();
     service = new CngApplicationsService(
       mockPrisma as unknown as PrismaService,
-      mockConfig as unknown as ConfigService,
       mockSensitive as unknown as SensitiveDataService,
       mockOtpDelivery as unknown as OtpDeliveryService,
+      mockDocumentStorage as unknown as DocumentStorageService,
     );
     application = makeApplication();
   });
@@ -348,6 +350,52 @@ describe('CngApplicationsService', () => {
         engineNumber: '2AZFE1234567',
       }),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('validates and stores an uploaded document through private object storage', async () => {
+    const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const file = {
+      buffer,
+      mimetype: 'image/png',
+      originalname: 'government-id.png',
+      size: buffer.length,
+    } as Express.Multer.File;
+    const storageKey = `${application.id}/private-document.png`;
+    const storedDocument = {
+      id: 'document-1',
+      applicationId: application.id,
+      type: 'govt_id',
+      originalName: file.originalname,
+      storageKey,
+      mimeType: file.mimetype,
+      sizeBytes: file.size,
+      checksumSha256: expect.any(String),
+      uploadedAt: new Date(),
+    };
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(application);
+    mockPrisma.cngApplicationDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.cngApplicationDocument.upsert.mockResolvedValue(storedDocument);
+
+    await service.saveDocument(application.id, 'govt_id', file, storageKey);
+
+    expect(mockDocumentStorage.putObject).toHaveBeenCalledWith(storageKey, buffer, 'image/png');
+    expect(mockPrisma.cngApplicationDocument.upsert).toHaveBeenCalled();
+  });
+
+  it('rejects a document whose contents do not match its declared type', async () => {
+    const buffer = Buffer.from('not a png');
+    const file = {
+      buffer,
+      mimetype: 'image/png',
+      originalname: 'fake.png',
+      size: buffer.length,
+    } as Express.Multer.File;
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(application);
+
+    await expect(
+      service.saveDocument(application.id, 'govt_id', file, `${application.id}/fake.png`),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockDocumentStorage.putObject).not.toHaveBeenCalled();
   });
 
   it('returns PII-minimized summaries from the administrative list', async () => {

@@ -9,7 +9,7 @@ export class LoggingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
-    const { method, url, ip } = request;
+    const { method, path, ip } = request;
     const userAgent = request.get('user-agent') || '';
     const userId = (request as Request & { user?: { sub: string } }).user?.sub || 'anonymous';
 
@@ -24,20 +24,17 @@ export class LoggingInterceptor implements NestInterceptor {
           const duration = Date.now() - now;
 
           this.logger.log(
-            `${method} ${url} ${statusCode} ${contentLength} - ${duration}ms - ${userId} - ${ip} - ${userAgent}`,
+            `${method} ${path} ${statusCode} ${contentLength} - ${duration}ms - ${userId} - ${ip} - ${userAgent}`,
           );
         },
-        error: (error) => {
+        error: (error: unknown) => {
           const duration = Date.now() - now;
+          const errorName = error instanceof Error ? error.name : 'RequestError';
           this.logger.error(
-            `${method} ${url} - ${duration}ms - ${userId} - ${ip} - ${userAgent} - Error: ${error.message}`,
+            `${method} ${path} - ${duration}ms - ${userId} - ${ip} - ${userAgent} - Error: ${errorName}`,
           );
         },
       }),
     );
   }
 }
-
-
-
-

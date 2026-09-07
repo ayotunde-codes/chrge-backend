@@ -16,8 +16,10 @@ export class SensitiveDataService {
 
   constructor(private readonly configService: ConfigService) {
     const configuredKey = this.configService.get<string>('CNG_APPLICATION_ENCRYPTION_KEY');
-    const fallbackKey = this.configService.getOrThrow<string>('JWT_SECRET');
-    const keyMaterial = configuredKey || fallbackKey;
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const keyMaterial = isProduction
+      ? this.configService.getOrThrow<string>('CNG_APPLICATION_ENCRYPTION_KEY')
+      : configuredKey || this.configService.getOrThrow<string>('JWT_SECRET');
 
     this.encryptionKey = createHash('sha256').update(`cng-encryption:${keyMaterial}`).digest();
     this.hmacKey = createHash('sha256').update(`cng-hmac:${keyMaterial}`).digest();

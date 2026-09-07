@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { AuthProvider } from '@prisma/client';
 
@@ -24,6 +19,10 @@ interface RequestMeta {
   ip?: string;
 }
 
+export interface AuthServiceResult extends AuthResponseDto {
+  refreshToken: string;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -38,7 +37,7 @@ export class AuthService {
   /**
    * Register a new user with email and password
    */
-  async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthResponseDto> {
+  async register(dto: RegisterDto, meta: RequestMeta): Promise<AuthServiceResult> {
     // Check if email already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
@@ -84,7 +83,7 @@ export class AuthService {
   /**
    * Login with email and password
    */
-  async login(dto: LoginDto, meta: RequestMeta): Promise<AuthResponseDto> {
+  async login(dto: LoginDto, meta: RequestMeta): Promise<AuthServiceResult> {
     // Find user by email
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
@@ -121,8 +120,10 @@ export class AuthService {
   /**
    * Login or register with Google ID token
    */
-  async googleLogin(dto: GoogleLoginDto, meta: RequestMeta): Promise<AuthResponseDto> {
-    const googleUser: GoogleUserInfo = await this.googleAuthService.verifyAccessToken(dto.accessToken);
+  async googleLogin(dto: GoogleLoginDto, meta: RequestMeta): Promise<AuthServiceResult> {
+    const googleUser: GoogleUserInfo = await this.googleAuthService.verifyAccessToken(
+      dto.accessToken,
+    );
 
     // Track whether this is a new account
     let isNewUser = false;
@@ -198,10 +199,14 @@ export class AuthService {
   /**
    * Refresh tokens using a valid refresh token
    */
-  async refreshTokens(refreshToken: string, meta: RequestMeta): Promise<AuthResponseDto> {
+  async refreshTokens(refreshToken: string, meta: RequestMeta): Promise<AuthServiceResult> {
     // Validate and rotate refresh token
-    const { user, accessToken, refreshToken: newRefreshToken, expiresIn } =
-      await this.tokenService.rotateRefreshToken(refreshToken, meta);
+    const {
+      user,
+      accessToken,
+      refreshToken: newRefreshToken,
+      expiresIn,
+    } = await this.tokenService.rotateRefreshToken(refreshToken, meta);
 
     return {
       user: this.mapUserToResponse(user),
@@ -262,7 +267,3 @@ export class AuthService {
     };
   }
 }
-
-
-
-

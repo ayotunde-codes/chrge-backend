@@ -6,12 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { CngApplicationDocument, CngApplicationStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomInt } from 'crypto';
-import { createReadStream } from 'fs';
-import { open, stat, unlink } from 'fs/promises';
-import { basename, resolve, sep } from 'path';
+import { basename } from 'path';
+import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AdminCngApplicationQueryDto,
@@ -33,6 +31,7 @@ import {
 } from './cng-application.constants';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
+import { DocumentStorageService } from './document-storage.service';
 
 type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
   include: { documents: true };
@@ -42,9 +41,9 @@ type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
 export class CngApplicationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
     private readonly sensitiveData: SensitiveDataService,
     private readonly otpDelivery: OtpDeliveryService,
+    private readonly documentStorage: DocumentStorageService,
   ) {}
 
   getConfiguration(): Record<string, unknown> {
@@ -339,7 +338,6 @@ export class CngApplicationsService {
   ): Promise<Record<string, unknown>> {
     await this.getEditableApplication(id);
     if (!isCngDocumentType(type)) {
-      await this.removeStoredFile(storageKey);
       throw new BadRequestException('Unsupported CNG application document type');
     }
 
@@ -348,44 +346,49 @@ export class CngApplicationsService {
       !(config.allowedMimeTypes as readonly string[]).includes(file.mimetype) ||
       file.size > config.maxSizeBytes
     ) {
-      await this.removeStoredFile(storageKey);
       throw new BadRequestException(
         `${config.label} must use an allowed format and be no larger than ${config.maxSizeBytes / 1024 / 1024} MB`,
       );
     }
-    if (!(await this.hasValidFileSignature(storageKey, file.mimetype))) {
-      await this.removeStoredFile(storageKey);
+    if (!this.hasValidFileSignature(file.buffer, file.mimetype)) {
       throw new BadRequestException('Document contents do not match the declared file format');
     }
 
     const existing = await this.prisma.cngApplicationDocument.findUnique({
       where: { applicationId_type: { applicationId: id, type } },
     });
-    const checksumSha256 = await this.hashStoredFile(storageKey);
+    const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    await this.documentStorage.putObject(storageKey, file.buffer, file.mimetype);
 
-    const document = await this.prisma.cngApplicationDocument.upsert({
-      where: { applicationId_type: { applicationId: id, type } },
-      create: {
-        applicationId: id,
-        type,
-        originalName: basename(file.originalname),
-        storageKey,
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
-        checksumSha256,
-      },
-      update: {
-        originalName: basename(file.originalname),
-        storageKey,
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
-        checksumSha256,
-        uploadedAt: new Date(),
-      },
-    });
+    let document: CngApplicationDocument;
+    try {
+      document = await this.prisma.cngApplicationDocument.upsert({
+        where: { applicationId_type: { applicationId: id, type } },
+        create: {
+          applicationId: id,
+          type,
+          originalName: basename(file.originalname),
+          storageKey,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          checksumSha256,
+        },
+        update: {
+          originalName: basename(file.originalname),
+          storageKey,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          checksumSha256,
+          uploadedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      await this.documentStorage.deleteObject(storageKey);
+      throw error;
+    }
 
     if (existing && existing.storageKey !== storageKey) {
-      await this.removeStoredFile(existing.storageKey);
+      await this.documentStorage.deleteObject(existing.storageKey);
     }
 
     return this.mapDocument(document);
@@ -405,13 +408,13 @@ export class CngApplicationsService {
     }
 
     await this.prisma.cngApplicationDocument.delete({ where: { id: existing.id } });
-    await this.removeStoredFile(existing.storageKey);
+    await this.documentStorage.deleteObject(existing.storageKey);
   }
 
   async getDocumentForDownload(
     id: string,
     type: string,
-  ): Promise<{ document: CngApplicationDocument; absolutePath: string }> {
+  ): Promise<{ document: CngApplicationDocument; stream: Readable }> {
     if (!isCngDocumentType(type)) {
       throw new BadRequestException('Unsupported CNG application document type');
     }
@@ -422,14 +425,8 @@ export class CngApplicationsService {
       throw new NotFoundException('Application document not found');
     }
 
-    const absolutePath = this.resolveStoragePath(document.storageKey);
-    try {
-      await stat(absolutePath);
-    } catch {
-      throw new NotFoundException('Stored application document is unavailable');
-    }
-
-    return { document, absolutePath };
+    const stream = await this.documentStorage.getObject(document.storageKey);
+    return { document, stream };
   }
 
   async submitApplication(id: string): Promise<Record<string, unknown>> {
@@ -726,65 +723,25 @@ export class CngApplicationsService {
     return age;
   }
 
-  private getStorageRoot(): string {
-    return resolve(
-      this.configService.get<string>(
-        'CNG_DOCUMENT_STORAGE_PATH',
-        'private-uploads/cng-applications',
-      ),
-    );
-  }
+  private hasValidFileSignature(buffer: Buffer, mimeType: string): boolean {
+    const signature = buffer.subarray(0, 8);
 
-  private resolveStoragePath(storageKey: string): string {
-    const root = this.getStorageRoot();
-    const absolutePath = resolve(root, storageKey);
-    if (absolutePath !== root && !absolutePath.startsWith(`${root}${sep}`)) {
-      throw new BadRequestException('Invalid document storage path');
+    if (mimeType === 'image/png') {
+      return signature
+        .subarray(0, 8)
+        .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     }
-    return absolutePath;
-  }
-
-  private async hashStoredFile(storageKey: string): Promise<string> {
-    const hash = createHash('sha256');
-    const stream = createReadStream(this.resolveStoragePath(storageKey));
-    for await (const chunk of stream) hash.update(chunk as Buffer);
-    return hash.digest('hex');
-  }
-
-  private async hasValidFileSignature(storageKey: string, mimeType: string): Promise<boolean> {
-    const file = await open(this.resolveStoragePath(storageKey), 'r');
-    try {
-      const buffer = Buffer.alloc(8);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      const signature = buffer.subarray(0, bytesRead);
-
-      if (mimeType === 'image/png') {
-        return signature
-          .subarray(0, 8)
-          .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-      }
-      if (mimeType === 'image/jpeg') {
-        return (
-          signature.length >= 3 &&
-          signature[0] === 0xff &&
-          signature[1] === 0xd8 &&
-          signature[2] === 0xff
-        );
-      }
-      if (mimeType === 'application/pdf') {
-        return signature.subarray(0, 5).toString('ascii') === '%PDF-';
-      }
-      return false;
-    } finally {
-      await file.close();
+    if (mimeType === 'image/jpeg') {
+      return (
+        signature.length >= 3 &&
+        signature[0] === 0xff &&
+        signature[1] === 0xd8 &&
+        signature[2] === 0xff
+      );
     }
-  }
-
-  private async removeStoredFile(storageKey: string): Promise<void> {
-    try {
-      await unlink(this.resolveStoragePath(storageKey));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (mimeType === 'application/pdf') {
+      return signature.subarray(0, 5).toString('ascii') === '%PDF-';
     }
+    return false;
   }
 }

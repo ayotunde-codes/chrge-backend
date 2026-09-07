@@ -12,12 +12,6 @@ export class AuthResponseDto {
   accessToken: string;
 
   @ApiProperty({
-    description: 'Refresh token for obtaining new access tokens',
-    example: 'a1b2c3d4e5f6789...',
-  })
-  refreshToken: string;
-
-  @ApiProperty({
     description: 'Access token expiration time in seconds',
     example: 900,
   })
@@ -29,7 +23,3 @@ export class AuthResponseDto {
   })
   isNewUser: boolean;
 }
-
-
-
-

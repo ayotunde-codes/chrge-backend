@@ -8,12 +8,15 @@ import {
   UseGuards,
   Req,
   Ip,
+  Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
+import { Request, Response, CookieOptions } from 'express';
+import { ConfigService } from '@nestjs/config';
 
-import { AuthService } from './auth.service';
+import { AuthService, AuthServiceResult } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -29,7 +32,40 @@ import { UserResponseDto } from '../users/dto/user-response.dto';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  private readonly refreshCookieName = 'chrge_refresh';
+
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private get refreshCookieOptions(): CookieOptions {
+    const expiration = this.configService.get<string>('JWT_REFRESH_EXPIRATION', '30d');
+    const days = Number.parseInt(expiration.replace('d', ''), 10) || 30;
+
+    return {
+      httpOnly: true,
+      secure: this.configService.get<string>('NODE_ENV') === 'production',
+      sameSite: 'strict',
+      path: '/api/v1/auth',
+      maxAge: days * 24 * 60 * 60 * 1000,
+    };
+  }
+
+  private sendAuthResult(result: AuthServiceResult, response: Response): AuthResponseDto {
+    const { refreshToken, ...body } = result;
+    response.cookie(this.refreshCookieName, refreshToken, this.refreshCookieOptions);
+    return body;
+  }
+
+  private getRefreshToken(request: Request, bodyToken?: string): string {
+    const cookieToken = request.cookies?.[this.refreshCookieName] as string | undefined;
+    const refreshToken = cookieToken || bodyToken;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh session is missing');
+    }
+    return refreshToken;
+  }
 
   @Post('register')
   @Public()
@@ -43,9 +79,11 @@ export class AuthController {
     @Body() registerDto: RegisterDto,
     @Req() req: Request,
     @Ip() ip: string,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.get('user-agent');
-    return this.authService.register(registerDto, { userAgent, ip });
+    const result = await this.authService.register(registerDto, { userAgent, ip });
+    return this.sendAuthResult(result, response);
   }
 
   @Post('login')
@@ -60,9 +98,11 @@ export class AuthController {
     @Body() loginDto: LoginDto,
     @Req() req: Request,
     @Ip() ip: string,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.get('user-agent');
-    return this.authService.login(loginDto, { userAgent, ip });
+    const result = await this.authService.login(loginDto, { userAgent, ip });
+    return this.sendAuthResult(result, response);
   }
 
   @Post('google')
@@ -77,9 +117,11 @@ export class AuthController {
     @Body() googleLoginDto: GoogleLoginDto,
     @Req() req: Request,
     @Ip() ip: string,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.get('user-agent');
-    return this.authService.googleLogin(googleLoginDto, { userAgent, ip });
+    const result = await this.authService.googleLogin(googleLoginDto, { userAgent, ip });
+    return this.sendAuthResult(result, response);
   }
 
   @Post('refresh')
@@ -94,9 +136,12 @@ export class AuthController {
     @Body() refreshTokenDto: RefreshTokenDto,
     @Req() req: Request,
     @Ip() ip: string,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.get('user-agent');
-    return this.authService.refreshTokens(refreshTokenDto.refreshToken, { userAgent, ip });
+    const refreshToken = this.getRefreshToken(req, refreshTokenDto.refreshToken);
+    const result = await this.authService.refreshTokens(refreshToken, { userAgent, ip });
+    return this.sendAuthResult(result, response);
   }
 
   @Post('logout')
@@ -110,8 +155,15 @@ export class AuthController {
   async logout(
     @Body() logoutDto: LogoutDto,
     @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<{ message: string }> {
-    await this.authService.logout(user.sub, logoutDto);
+    const cookieToken = request.cookies?.[this.refreshCookieName] as string | undefined;
+    await this.authService.logout(user.sub, {
+      ...logoutDto,
+      refreshToken: logoutDto.refreshToken || cookieToken,
+    });
+    response.clearCookie(this.refreshCookieName, this.refreshCookieOptions);
     return { message: 'Logged out successfully' };
   }
 

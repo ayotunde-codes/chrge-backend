@@ -28,23 +28,27 @@ function connectorFromString(s: string): ConnectorType {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Demo seed is disabled in production. Use `npm run prisma:seed:catalog` instead.',
+    );
+  }
+
   console.log('🌱 Seeding database...');
 
   // Clean existing data in development
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Cleaning existing data...');
-    await prisma.review.deleteMany();
-    await prisma.favorite.deleteMany();
-    await prisma.stationImage.deleteMany();
-    await prisma.port.deleteMany();
-    await prisma.station.deleteMany();
-    await prisma.network.deleteMany();
-    await prisma.userVehicle.deleteMany();
-    await prisma.vehicleModel.deleteMany();
-    await prisma.vehicleBrand.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
-  }
+  console.log('Cleaning existing data...');
+  await prisma.review.deleteMany();
+  await prisma.favorite.deleteMany();
+  await prisma.stationImage.deleteMany();
+  await prisma.port.deleteMany();
+  await prisma.station.deleteMany();
+  await prisma.network.deleteMany();
+  await prisma.userVehicle.deleteMany();
+  await prisma.vehicleModel.deleteMany();
+  await prisma.vehicleBrand.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.user.deleteMany();
 
   // ============================================================================
   // USERS
@@ -100,7 +104,11 @@ async function main() {
   }
   console.log(`✅ Created ${VEHICLE_BRANDS.length} vehicle brands`);
 
-  const powertrainMap = { BEV: PowertrainType.BEV, PHEV: PowertrainType.PHEV, EREV: PowertrainType.EREV } as const;
+  const powertrainMap = {
+    BEV: PowertrainType.BEV,
+    PHEV: PowertrainType.PHEV,
+    EREV: PowertrainType.EREV,
+  } as const;
   for (const m of VEHICLE_MODELS) {
     const connectors = m.connector as string[];
     const firstConnector = connectorFromString(connectors[0] ?? 'CCS2');
