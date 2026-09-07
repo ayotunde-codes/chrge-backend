@@ -47,7 +47,9 @@ export class AuthController {
       httpOnly: true,
       secure: this.configService.get<string>('NODE_ENV') === 'production',
       sameSite: 'strict',
-      path: '/api/v1/auth',
+      // Keep the cookie available through the temporary same-origin frontend
+      // proxy as well as the eventual api.gochrge.com custom domain.
+      path: '/',
       maxAge: days * 24 * 60 * 60 * 1000,
     };
   }
