@@ -26,6 +26,7 @@
     "prisma:studio": "prisma generate && prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed:catalog": "ts-node prisma/seed-catalog.ts",
+    "prisma:seed:catalog:prod": "node dist/prisma/seed-catalog.js",
     "prisma:reset": "prisma migrate reset --force",
     "db:push": "prisma db push"
   },

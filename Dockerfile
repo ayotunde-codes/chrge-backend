@@ -26,4 +26,4 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 3000
 
 # Run migrations, safely upsert the public vehicle catalog, then start the app.
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run prisma:seed:catalog && node dist/src/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run prisma:seed:catalog:prod && node dist/src/main.js"]
