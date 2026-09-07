@@ -13,9 +13,51 @@ import {
   Max,
   MaxLength,
   IsDateString,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { ConnectorType, ChargerType, PortStatus, PowertrainType, StationType } from '@prisma/client';
+import {
+  ConnectorType,
+  ChargerType,
+  PortStatus,
+  PowertrainType,
+  StationStatus,
+  StationType,
+} from '@prisma/client';
+
+export class AdminStationQueryDto {
+  @ApiPropertyOptional({ enum: StationStatus })
+  @IsOptional()
+  @IsEnum(StationStatus)
+  status?: StationStatus;
+
+  @ApiPropertyOptional({ enum: StationType })
+  @IsOptional()
+  @IsEnum(StationType)
+  stationType?: StationType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @ApiPropertyOptional({ default: 25, maximum: 100 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiPropertyOptional({ enum: ['newest', 'oldest'] })
+  @IsOptional()
+  @IsIn(['newest', 'oldest'])
+  order?: 'newest' | 'oldest';
+}
 
 // ============================================================================
 // VEHICLE BRAND DTOs
@@ -87,7 +129,12 @@ export class CreateVehicleModelDto {
   @IsEnum(PowertrainType)
   powertrain: PowertrainType;
 
-  @ApiProperty({ example: ['NACS', 'CCS2'], description: 'Supported connector types', enum: ConnectorType, isArray: true })
+  @ApiProperty({
+    example: ['NACS', 'CCS2'],
+    description: 'Supported connector types',
+    enum: ConnectorType,
+    isArray: true,
+  })
   @IsArray()
   @IsEnum(ConnectorType, { each: true })
   connectors: ConnectorType[];
@@ -470,4 +517,3 @@ export class PortResponseDto {
   @ApiPropertyOptional() portNumber: string | null;
   @ApiProperty() createdAt: Date;
 }
-

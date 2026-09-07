@@ -678,15 +678,19 @@ export class CngApplicationsService {
       reference: application.reference,
       status: application.status,
       applicant: {
-        firstName: application.firstName,
-        lastName: application.lastName,
-        email: application.email,
-        phone: application.phone,
+        displayName: [application.firstName, application.lastName]
+          .filter(Boolean)
+          .map((value) => `${value?.slice(0, 1)}•••`)
+          .join(' '),
+        email: application.email
+          ? `${application.email.slice(0, 2)}•••@${application.email.split('@')[1]}`
+          : null,
+        phone: application.phone ? `••••••${application.phone.slice(-4)}` : null,
       },
       vehicle: {
         brand: application.vehicleBrand,
         model: application.vehicleModel,
-        licensePlate: application.licensePlate,
+        licensePlate: application.licensePlate ? `••••${application.licensePlate.slice(-4)}` : null,
       },
       financing: {
         packageId: application.packageId,

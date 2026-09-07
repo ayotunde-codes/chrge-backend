@@ -43,6 +43,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  ADMIN_MFA_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
   REDIS_URL: string = 'redis://localhost:6379';
 
   @IsString()
@@ -139,6 +143,7 @@ export function validateEnv(config: Record<string, unknown>) {
       'R2_ACCESS_KEY_ID',
       'R2_SECRET_ACCESS_KEY',
       'R2_BUCKET',
+      'ADMIN_MFA_ENCRYPTION_KEY',
     ];
     const missing = requiredProductionValues.filter(
       (name) => !String(validatedConfig[name] ?? '').trim(),

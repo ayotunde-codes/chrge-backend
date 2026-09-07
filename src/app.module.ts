@@ -15,6 +15,7 @@ import { StationsModule } from './modules/stations/stations.module';
 import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CngApplicationsModule } from './modules/cng-applications/cng-applications.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { appConfig, validateEnv } from './config/app.config';
 
 @Module({
@@ -54,6 +55,7 @@ import { appConfig, validateEnv } from './config/app.config';
 
     // Core modules
     PrismaModule,
+    AuditModule,
 
     // Feature modules
     AuthModule,

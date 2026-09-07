@@ -8,11 +8,21 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Get,
+  Query,
+  Req,
+  UseInterceptors,
 } from '@nestjs/common';
+import { Request } from 'express';
+import { randomUUID } from 'crypto';
+import { AdminOperationsService } from './admin-operations.service';
+import { AuditService } from '../audit/audit.service';
+import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import {
@@ -28,16 +38,63 @@ import {
   StationResponseDto,
   PortResponseDto,
   StationImageResponseDto,
+  AdminStationQueryDto,
 } from './dto/admin.dto';
 import { ReviewStationDto } from '../stations/dto/submit-station.dto';
 
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, StaffAccessGuard, RolesGuard)
 @Roles('ADMIN', 'OPERATOR')
 @ApiBearerAuth('access-token')
+@UseInterceptors(AdminAuditInterceptor)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly operations: AdminOperationsService,
+    private readonly audit: AuditService,
+  ) {}
+
+  @Get('dashboard')
+  dashboard() {
+    return this.operations.dashboard();
+  }
+
+  @Get('vehicles')
+  vehicles() {
+    return this.operations.vehicleCatalog();
+  }
+
+  @Get('users')
+  @Roles('ADMIN')
+  users(@Query() query: { cursor?: string; search?: string; limit?: number }) {
+    return this.operations.users(query);
+  }
+
+  @Get('reviews')
+  reviews(@Query() query: { cursor?: string; limit?: number }) {
+    return this.operations.reviews(query);
+  }
+
+  @Get('settings')
+  settings() {
+    return this.operations.settings();
+  }
+
+  @Get('audit-log')
+  @Roles('ADMIN')
+  auditLog(
+    @Query()
+    query: {
+      cursor?: string;
+      limit?: number;
+      action?: string;
+      actorId?: string;
+      targetType?: string;
+    },
+  ) {
+    return this.audit.list(query);
+  }
 
   // ============================================================================
   // VEHICLE BRANDS
@@ -91,6 +148,18 @@ export class AdminController {
   // STATIONS
   // ============================================================================
 
+  @Get('stations')
+  @ApiOperation({ summary: 'List every station, including inactive submissions' })
+  async listStations(@Query() dto: AdminStationQueryDto) {
+    return this.adminService.listStations(dto);
+  }
+
+  @Get('stations/:id')
+  @ApiOperation({ summary: 'Get admin station detail, including inactive submissions' })
+  async getStation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getStationForAdmin(id);
+  }
+
   @Post('stations')
   @ApiOperation({ summary: 'Create a new charging station' })
   @ApiResponse({ status: 201, type: StationResponseDto })
@@ -118,8 +187,20 @@ export class AdminController {
   async reviewStation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewStationDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
   ): Promise<StationResponseDto & { status: string; rejectionReason: string | null }> {
-    const station = await this.adminService.reviewStation(id, dto);
+    const station = await this.adminService.reviewStation(
+      id,
+      {
+        actorId: user.sub,
+        actorRole: user.role === 'OPERATOR' ? 'OPERATOR' : 'ADMIN',
+        requestId: request.get('x-request-id') ?? randomUUID(),
+        ipAddress: request.ip,
+        userAgent: request.get('user-agent'),
+      },
+      dto,
+    );
     return {
       ...this.mapStation(station),
       status: (station as unknown as { status: string }).status,
@@ -235,4 +316,3 @@ export class AdminController {
     };
   }
 }
-

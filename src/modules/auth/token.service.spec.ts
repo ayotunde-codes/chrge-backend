@@ -95,6 +95,9 @@ describe('TokenService', () => {
         sub: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
+        audience: 'chrge-consumer',
+        mfa: false,
+        environment: 'development',
       });
       expect(hashUtil.generateSecureToken).toHaveBeenCalled();
       expect(hashUtil.hashRefreshToken).toHaveBeenCalledWith(
