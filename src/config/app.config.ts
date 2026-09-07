@@ -95,6 +95,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CNG_OTP_DELIVERY_ENABLED: string = 'false';
+
+  @IsString()
+  @IsOptional()
   ENABLE_SWAGGER: string = 'false';
 
   @IsString()
@@ -205,6 +209,7 @@ export const appConfig = () => ({
       process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
     otpWebhookUrl: process.env.CNG_OTP_WEBHOOK_URL,
     otpWebhookToken: process.env.CNG_OTP_WEBHOOK_TOKEN,
+    otpDeliveryEnabled: process.env.CNG_OTP_DELIVERY_ENABLED === 'true',
   },
   swagger: {
     enabled: process.env.ENABLE_SWAGGER === 'true',
