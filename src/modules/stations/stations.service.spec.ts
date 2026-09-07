@@ -232,7 +232,7 @@ describe('StationsService', () => {
       expect(result.stations[0]).toEqual(
         expect.objectContaining({
           stationType: 'CNG',
-          priceText: '₦320/scm',
+          priceText: '₦320/SCM',
           cngDetails: expect.objectContaining({
             dispenserCount: 4,
             availabilityStatus: 'AVAILABLE',
@@ -296,7 +296,7 @@ describe('StationsService', () => {
       expect(result).toEqual(
         expect.objectContaining({
           stationType: 'CNG',
-          priceText: '₦320/scm',
+          priceText: '₦320/SCM',
           ports: [],
           cngDetails: expect.objectContaining({
             dispenserCount: 4,

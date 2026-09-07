@@ -1051,7 +1051,7 @@ export class StationsService {
     if (!pricing) return null;
     const parts: string[] = [];
     if (pricing.perKwh) parts.push(`₦${pricing.perKwh}/kWh`);
-    if (pricing.perScm) parts.push(`₦${pricing.perScm}/scm`);
+    if (pricing.perScm) parts.push(`₦${pricing.perScm}/SCM`);
     if (pricing.perKg) parts.push(`₦${pricing.perKg}/kg`);
     if (pricing.perLitre) parts.push(`₦${pricing.perLitre}/litre`);
     if (pricing.perMinute) parts.push(`₦${pricing.perMinute}/min`);

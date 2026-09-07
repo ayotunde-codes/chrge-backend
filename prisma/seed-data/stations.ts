@@ -161,6 +161,16 @@ export async function seedResearchedStations(prisma: PrismaClient): Promise<void
 
   for (const station of catalog.stations) {
     const stationId = stableUuid(station.id);
+    const catalogPricing =
+      pricingFromText(station.priceText) ??
+      (station.stationType === 'CNG'
+        ? ({ currency: 'NGN', perScm: 380 } as Prisma.InputJsonValue)
+        : undefined);
+    const priceNote =
+      station.priceText ??
+      (station.stationType === 'CNG'
+        ? '₦380/SCM typical passenger-vehicle rate; confirm at station'
+        : null);
     const connectors = station.connectors
       .map((connector) => ({ ...connector, connectorType: connectorMap[connector.type] }))
       .filter(
@@ -192,8 +202,8 @@ export async function seedResearchedStations(prisma: PrismaClient): Promise<void
       operatingHours: operatingHoursFromText(station.openingHoursText),
       openingHoursNote: station.openingHoursText,
       amenities: [] as Prisma.InputJsonValue,
-      pricing: pricingFromText(station.priceText),
-      priceNote: station.priceText,
+      pricing: catalogPricing,
+      priceNote,
       cngDetails: (station.cngDetails ?? undefined) as Prisma.InputJsonValue | undefined,
       accessNotes: station.access,
       operationalStatus: station.operationalStatus,
