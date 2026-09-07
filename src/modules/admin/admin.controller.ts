@@ -218,7 +218,7 @@ export class AdminController {
     stationId: string;
     connectorType: string;
     chargerType: string;
-    powerKw: number;
+    powerKw: number | null;
     status: string;
     portNumber: string | null;
     createdAt: Date;
@@ -235,5 +235,4 @@ export class AdminController {
     };
   }
 }
-
 

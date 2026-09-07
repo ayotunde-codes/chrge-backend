@@ -186,6 +186,7 @@ describe('StationsService', () => {
             OR: [
               { name: { contains: 'Lekki', mode: 'insensitive' } },
               { address: { contains: 'Lekki', mode: 'insensitive' } },
+              { operatorName: { contains: 'Lekki', mode: 'insensitive' } },
               { area: { contains: 'Lekki', mode: 'insensitive' } },
               { city: { contains: 'Lekki', mode: 'insensitive' } },
             ],

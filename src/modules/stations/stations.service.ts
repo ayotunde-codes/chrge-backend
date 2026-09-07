@@ -27,7 +27,11 @@ interface DayHours {
   close: string; // "22:00" or "24h"
 }
 
+type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
 interface OperatingHours {
+  status?: 'UNVERIFIED';
+  label?: string;
   mon?: DayHours;
   tue?: DayHours;
   wed?: DayHours;
@@ -54,6 +58,11 @@ interface CngDetails {
   paymentMethods?: string[];
   availabilityStatus?: string;
   safetyCertification?: string;
+}
+
+interface ResearchSourceLink {
+  kind: string;
+  url: string;
 }
 
 @Injectable()
@@ -88,48 +97,16 @@ export class StationsService {
       userConnector = await this.vehiclesService.getPrimaryVehicleConnector(userId);
     }
 
-    // Build where clause
-    const where: Prisma.StationWhereInput = {
-      isActive: true,
-      deletedAt: null,
-    };
-
-    // Connector filtering
-    const connectorFilter = dto.connectors?.length
-      ? dto.connectors
-      : userConnector
-        ? [userConnector]
-        : null;
-
-    if (connectorFilter) {
-      where.ports = {
-        some: {
-          connectorType: { in: connectorFilter },
-        },
-      };
-    }
-
-    // Status filtering
-    if (dto.status?.length) {
-      where.ports = {
-        ...where.ports,
-        some: {
-          ...((where.ports as Prisma.PortListRelationFilter)?.some || {}),
-          status: { in: dto.status },
-        },
-      };
-    }
-
-    // Power filtering
-    if (dto.minPowerKw) {
-      where.ports = {
-        ...where.ports,
-        some: {
-          ...((where.ports as Prisma.PortListRelationFilter)?.some || {}),
-          powerKw: { gte: dto.minPowerKw },
-        },
-      };
-    }
+    // A vehicle connector should not hide CNG results, which do not have EV ports.
+    const connectorFilter =
+      dto.stationType === StationType.CNG
+        ? null
+        : dto.connectors?.length
+          ? dto.connectors
+          : userConnector
+            ? [userConnector]
+            : null;
+    const hasPortFilter = Boolean(connectorFilter?.length || dto.status?.length || dto.minPowerKw);
 
     // Fetch stations with Haversine distance calculation
     // Using raw query for distance ordering
@@ -139,6 +116,20 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."operatorName" as operator_name,
+        s."serviceType" as service_type,
+        s."locationAccuracy" as location_accuracy,
+        s."navigationReady" as navigation_ready,
+        s."priceNote" as price_note,
+        s."openingHoursNote" as opening_hours_note,
+        s."accessNotes" as access_notes,
+        s."operationalStatus" as operational_status,
+        s."verificationTier" as verification_tier,
+        s."verificationConfidence" as verification_confidence,
+        s."verificationBasis" as verification_basis,
+        s."verifiedAt" as verified_at,
+        s."sourceLinks" as source_links,
+        s."researchMetadata" as research_metadata,
         s."stationType" as station_type,
         s.address,
         s.area,
@@ -174,6 +165,18 @@ export class StationsService {
       WHERE s."isActive" = true
         AND s."deletedAt" IS NULL
         ${dto.stationType ? Prisma.sql`AND s."stationType" = CAST(${dto.stationType} AS "StationType")` : Prisma.sql``}
+        ${
+          hasPortFilter
+            ? Prisma.sql`AND EXISTS (
+                SELECT 1
+                FROM ports p
+                WHERE p."stationId" = s.id
+                  ${connectorFilter?.length ? Prisma.sql`AND p."connectorType"::text IN (${Prisma.join(connectorFilter)})` : Prisma.sql``}
+                  ${dto.status?.length ? Prisma.sql`AND p.status::text IN (${Prisma.join(dto.status)})` : Prisma.sql``}
+                  ${dto.minPowerKw ? Prisma.sql`AND p."powerKw" >= ${dto.minPowerKw}` : Prisma.sql``}
+              )`
+            : Prisma.sql``
+        }
         AND (
           6371 * acos(
             cos(radians(${dto.lat})) * cos(radians(s.latitude)) *
@@ -268,6 +271,20 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."operatorName" as operator_name,
+        s."serviceType" as service_type,
+        s."locationAccuracy" as location_accuracy,
+        s."navigationReady" as navigation_ready,
+        s."priceNote" as price_note,
+        s."openingHoursNote" as opening_hours_note,
+        s."accessNotes" as access_notes,
+        s."operationalStatus" as operational_status,
+        s."verificationTier" as verification_tier,
+        s."verificationConfidence" as verification_confidence,
+        s."verificationBasis" as verification_basis,
+        s."verifiedAt" as verified_at,
+        s."sourceLinks" as source_links,
+        s."researchMetadata" as research_metadata,
         s."stationType" as station_type,
         s.address,
         s.area,
@@ -301,6 +318,7 @@ export class StationsService {
         ) AS distance_km,
         (
           CASE WHEN s."isVerified" THEN 20 ELSE 0 END +
+          CASE WHEN s."navigationReady" THEN 20 ELSE 0 END +
           CASE WHEN s."availablePorts" > 0 THEN 15 ELSE 0 END +
           COALESCE(s."avgRating", 0) * 5 +
           (10 - LEAST(10, (
@@ -393,6 +411,7 @@ export class StationsService {
       where.OR = [
         { name: { contains: dto.search, mode: 'insensitive' } },
         { address: { contains: dto.search, mode: 'insensitive' } },
+        { operatorName: { contains: dto.search, mode: 'insensitive' } },
         { area: { contains: dto.search, mode: 'insensitive' } },
         { city: { contains: dto.search, mode: 'insensitive' } },
       ];
@@ -450,6 +469,20 @@ export class StationsService {
           id: s.id,
           name: s.name,
           description: s.description,
+          operator_name: s.operatorName,
+          service_type: s.serviceType,
+          location_accuracy: s.locationAccuracy,
+          navigation_ready: s.navigationReady,
+          price_note: s.priceNote,
+          opening_hours_note: s.openingHoursNote,
+          access_notes: s.accessNotes,
+          operational_status: s.operationalStatus,
+          verification_tier: s.verificationTier,
+          verification_confidence: s.verificationConfidence,
+          verification_basis: s.verificationBasis,
+          verified_at: s.verifiedAt,
+          source_links: s.sourceLinks,
+          research_metadata: s.researchMetadata,
           station_type: s.stationType ?? 'EV',
           address: s.address,
           area: (s as unknown as { area?: string | null }).area ?? null,
@@ -701,6 +734,20 @@ export class StationsService {
           id: f.station.id,
           name: f.station.name,
           description: f.station.description,
+          operator_name: f.station.operatorName,
+          service_type: f.station.serviceType,
+          location_accuracy: f.station.locationAccuracy,
+          navigation_ready: f.station.navigationReady,
+          price_note: f.station.priceNote,
+          opening_hours_note: f.station.openingHoursNote,
+          access_notes: f.station.accessNotes,
+          operational_status: f.station.operationalStatus,
+          verification_tier: f.station.verificationTier,
+          verification_confidence: f.station.verificationConfidence,
+          verification_basis: f.station.verificationBasis,
+          verified_at: f.station.verifiedAt,
+          source_links: f.station.sourceLinks,
+          research_metadata: f.station.researchMetadata,
           station_type: f.station.stationType ?? 'EV',
           address: f.station.address,
           area: (f.station as unknown as { area?: string | null }).area ?? null,
@@ -828,6 +875,20 @@ export class StationsService {
         id: s.id,
           name: s.name,
           description: s.description,
+          operator_name: s.operatorName,
+          service_type: s.serviceType,
+          location_accuracy: s.locationAccuracy,
+          navigation_ready: s.navigationReady,
+          price_note: s.priceNote,
+          opening_hours_note: s.openingHoursNote,
+          access_notes: s.accessNotes,
+          operational_status: s.operationalStatus,
+          verification_tier: s.verificationTier,
+          verification_confidence: s.verificationConfidence,
+          verification_basis: s.verificationBasis,
+          verified_at: s.verifiedAt,
+          source_links: s.sourceLinks,
+          research_metadata: s.researchMetadata,
           station_type: s.stationType ?? 'EV',
           address: s.address,
         area: (s as unknown as { area?: string | null }).area ?? null,
@@ -883,6 +944,7 @@ export class StationsService {
   private isStationOpen(station: StationWithDistance): boolean {
     const hours = station.operating_hours as OperatingHours | null;
     if (!hours) return true; // No hours means 24/7
+    if (hours.status === 'UNVERIFIED') return false;
 
     const now = new Date();
     const timezone = station.timezone || 'Africa/Lagos';
@@ -902,19 +964,20 @@ export class StationsService {
       const minute = parts.find((p) => p.type === 'minute')?.value || '00';
       const currentTime = `${hour}:${minute}`;
 
-      const dayHours = hours[weekday as keyof OperatingHours];
+      const dayHours = hours[weekday as Weekday];
       if (!dayHours) return false;
       if (dayHours.open === '24h' || dayHours.close === '24h') return true;
 
       return currentTime >= dayHours.open && currentTime <= dayHours.close;
     } catch {
-      return true; // Default to open on error
+      return false;
     }
   }
 
   private buildOpeningHoursText(station: StationWithDistance): string {
     const hours = station.operating_hours as OperatingHours | null;
     if (!hours) return 'Open 24/7';
+    if (hours.status === 'UNVERIFIED') return hours.label || 'Hours unverified';
 
     const now = new Date();
     const timezone = station.timezone || 'Africa/Lagos';
@@ -934,7 +997,7 @@ export class StationsService {
       const minute = parts.find((p) => p.type === 'minute')?.value || '00';
       const currentTime = `${hour}:${minute}`;
 
-      const dayHours = hours[weekday as keyof OperatingHours];
+      const dayHours = hours[weekday as Weekday];
       if (!dayHours) return 'Closed today';
       if (dayHours.open === '24h' || dayHours.close === '24h') return 'Open 24/7';
 
@@ -942,36 +1005,41 @@ export class StationsService {
       if (currentTime > dayHours.close) return `Closed · Opens tomorrow`;
       return `Closes at ${dayHours.close}`;
     } catch {
-      return 'Open 24/7';
+      return 'Hours unverified';
     }
   }
 
   private buildStatusSummary(
     ports: { status: PortStatus }[],
     cngDetails?: CngDetails | null,
-  ): 'AVAILABLE' | 'IN_USE' | 'OUT_OF_SERVICE' {
+  ): 'AVAILABLE' | 'IN_USE' | 'OUT_OF_SERVICE' | 'UNKNOWN' {
     if (!ports.length && cngDetails?.availabilityStatus) {
       if (cngDetails.availabilityStatus === 'AVAILABLE') return 'AVAILABLE';
       if (cngDetails.availabilityStatus === 'IN_USE') return 'IN_USE';
     }
-    if (!ports.length) return 'OUT_OF_SERVICE';
+    if (!ports.length) return 'UNKNOWN';
     const available = ports.filter((p) => p.status === 'AVAILABLE').length;
     if (available > 0) return 'AVAILABLE';
     const outOfOrder = ports.filter((p) => p.status === 'OUT_OF_ORDER').length;
     if (outOfOrder === ports.length) return 'OUT_OF_SERVICE';
+    const unknown = ports.filter((p) => p.status === 'UNKNOWN').length;
+    if (unknown === ports.length) return 'UNKNOWN';
     return 'IN_USE';
   }
 
   private buildConnectorSummary(
-    ports: { connectorType: ConnectorType; powerKw: number }[],
-  ): { type: string; powerKw: number; count: number }[] {
-    const map = new Map<string, { powerKw: number; count: number }>();
+    ports: { connectorType: ConnectorType; powerKw: number | null }[],
+  ): { type: string; powerKw: number | null; count: number }[] {
+    const map = new Map<string, { powerKw: number | null; count: number }>();
     for (const port of ports) {
       const key = port.connectorType;
       const existing = map.get(key);
       if (existing) {
         existing.count += 1;
-        existing.powerKw = Math.max(existing.powerKw, port.powerKw);
+        if (port.powerKw !== null) {
+          existing.powerKw =
+            existing.powerKw === null ? port.powerKw : Math.max(existing.powerKw, port.powerKw);
+        }
       } else {
         map.set(key, { powerKw: port.powerKw, count: 1 });
       }
@@ -993,7 +1061,7 @@ export class StationsService {
 
   private mapToStationCard(
     station: StationWithDistance,
-    ports: { connectorType: ConnectorType; status: PortStatus; powerKw: number }[],
+    ports: { connectorType: ConnectorType; status: PortStatus; powerKw: number | null }[],
     heroImageUrl?: string,
     isFavorite = false,
     extraImages: string[] = [],
@@ -1010,6 +1078,17 @@ export class StationsService {
       id: station.id,
       name: station.name,
       stationType: station.station_type ?? 'EV',
+      operatorName: station.operator_name,
+      serviceType: station.service_type,
+      locationAccuracy: station.location_accuracy,
+      navigationReady: station.navigation_ready,
+      accessNotes: station.access_notes,
+      operationalStatus: station.operational_status,
+      verificationTier: station.verification_tier,
+      verificationConfidence: station.verification_confidence,
+      openingHoursNote: station.opening_hours_note,
+      priceNote: station.price_note,
+      sourceLinks: (station.source_links as ResearchSourceLink[]) || [],
       address: station.address,
       area: station.area ?? null,
       city: station.city,
@@ -1017,12 +1096,12 @@ export class StationsService {
       lng: station.longitude,
       heroImageUrl: heroImageUrl || null,
       images: allImages,
-      distanceKm: station.distance_km ? Math.round(station.distance_km * 10) / 10 : null,
+      distanceKm: station.distance_km !== null ? Math.round(station.distance_km * 10) / 10 : null,
       rating: station.avg_rating,
       reviewCount: station.review_count,
       isOpenNow: this.isStationOpen(station),
       openingHoursText: this.buildOpeningHoursText(station),
-      priceText: this.buildPriceText(pricing),
+      priceText: this.buildPriceText(pricing) ?? station.price_note,
       statusSummary: this.buildStatusSummary(ports, cngDetails),
       portsAvailableCount: availableCount,
       portsTotalCount: totalCount,
@@ -1037,7 +1116,7 @@ export class StationsService {
   private mapToStationDetail(
     station: Station & {
       network?: { id: string; name: string; logoUrl: string | null; website: string | null; phoneNumber: string | null } | null;
-      ports: { id: string; connectorType: ConnectorType; chargerType: string; powerKw: number; status: PortStatus; portNumber: string | null; pricePerKwh: number | null; pricePerMinute: number | null; pricePerSession: number | null; estimatedAvailableAt: Date | null }[];
+      ports: { id: string; connectorType: ConnectorType; chargerType: string; powerKw: number | null; status: PortStatus; portNumber: string | null; pricePerKwh: number | null; pricePerMinute: number | null; pricePerSession: number | null; estimatedAvailableAt: Date | null }[];
       images: { id: string; url: string; caption: string | null; sortOrder: number }[];
     },
     isFavorite: boolean,
@@ -1078,6 +1157,20 @@ export class StationsService {
       id: station.id,
       name: station.name,
       stationType: (station as unknown as { stationType?: StationType }).stationType ?? 'EV',
+      operatorName: station.operatorName,
+      serviceType: station.serviceType,
+      locationAccuracy: station.locationAccuracy,
+      navigationReady: station.navigationReady,
+      accessNotes: station.accessNotes,
+      operationalStatus: station.operationalStatus,
+      verificationTier: station.verificationTier,
+      verificationConfidence: station.verificationConfidence,
+      verificationBasis: station.verificationBasis,
+      verifiedAt: station.verifiedAt,
+      sourceLinks: (station.sourceLinks as unknown as ResearchSourceLink[]) || [],
+      researchMetadata: station.researchMetadata,
+      openingHoursNote: station.openingHoursNote,
+      priceNote: station.priceNote,
       description: station.description,
       address: station.address,
       area: (station as unknown as { area?: string | null }).area ?? null,
@@ -1093,7 +1186,7 @@ export class StationsService {
       openingHoursText: this.buildOpeningHoursText(asRaw),
       operatingHours: station.operatingHours as OperatingHours | null,
       amenities: (station.amenities as string[]) || [],
-      priceText: this.buildPriceText(pricing),
+      priceText: this.buildPriceText(pricing) ?? station.priceNote,
       pricing,
       cngDetails,
       phoneNumber: station.phoneNumber,
@@ -1140,6 +1233,20 @@ interface StationWithDistance {
   id: string;
   name: string;
   description: string | null;
+  operator_name: string | null;
+  service_type: string | null;
+  location_accuracy: string | null;
+  navigation_ready: boolean;
+  price_note: string | null;
+  opening_hours_note: string | null;
+  access_notes: string | null;
+  operational_status: string | null;
+  verification_tier: string | null;
+  verification_confidence: number | null;
+  verification_basis: string | null;
+  verified_at: Date | null;
+  source_links: unknown;
+  research_metadata: unknown;
   station_type: StationType;
   address: string;
   area?: string | null;
@@ -1169,7 +1276,7 @@ interface StationWithDistance {
 
 interface ConnectorSummary {
   type: string;
-  powerKw: number;
+  powerKw: number | null;
   count: number;
 }
 
@@ -1177,6 +1284,17 @@ interface StationCardResult {
   id: string;
   name: string;
   stationType: StationType;
+  operatorName: string | null;
+  serviceType: string | null;
+  locationAccuracy: string | null;
+  navigationReady: boolean;
+  accessNotes: string | null;
+  operationalStatus: string | null;
+  verificationTier: string | null;
+  verificationConfidence: number | null;
+  openingHoursNote: string | null;
+  priceNote: string | null;
+  sourceLinks: ResearchSourceLink[];
   address: string;
   area: string | null;
   city: string;
@@ -1204,6 +1322,20 @@ interface StationDetailResult {
   id: string;
   name: string;
   stationType: StationType;
+  operatorName: string | null;
+  serviceType: string | null;
+  locationAccuracy: string | null;
+  navigationReady: boolean;
+  accessNotes: string | null;
+  operationalStatus: string | null;
+  verificationTier: string | null;
+  verificationConfidence: number | null;
+  verificationBasis: string | null;
+  verifiedAt: Date | null;
+  sourceLinks: ResearchSourceLink[];
+  researchMetadata: unknown;
+  openingHoursNote: string | null;
+  priceNote: string | null;
   description: string | null;
   address: string;
   area: string | null;
@@ -1229,7 +1361,7 @@ interface StationDetailResult {
     id: string;
     connectorType: string;
     chargerType: string;
-    powerKw: number;
+    powerKw: number | null;
     status: string;
     portNumber: string | null;
     pricing: { perKwh: number | null; perMinute: number | null; sessionFee: number | null };

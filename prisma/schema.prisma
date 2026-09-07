@@ -35,10 +35,10 @@ enum ConnectorType {
   CHADEMO
   TESLA
   J1772
-  TYPE_2      // Type 2 (Mennekes) AC - matches frontend
-  TYPE2       // Legacy (ports may use this)
+  TYPE_2 // Type 2 (Mennekes) AC - matches frontend
+  TYPE2 // Legacy (ports may use this)
   NACS
-  GB_T        // Chinese standard
+  GB_T // Chinese standard
 }
 
 enum PortStatus {
@@ -55,9 +55,9 @@ enum ChargerType {
 }
 
 enum PowertrainType {
-  BEV   // Battery electric
-  PHEV  // Plug-in hybrid
-  EREV  // Extended-range electric
+  BEV // Battery electric
+  PHEV // Plug-in hybrid
+  EREV // Extended-range electric
 }
 
 enum StationStatus {
@@ -88,25 +88,25 @@ enum CngApplicationStatus {
 model User {
   id            String       @id @default(uuid())
   email         String       @unique
-  passwordHash  String?      // Null for OAuth-only users
+  passwordHash  String? // Null for OAuth-only users
   firstName     String?
   lastName      String?
   avatarUrl     String?
   provider      AuthProvider @default(EMAIL)
-  providerId    String?      // Google sub, Apple sub, etc.
+  providerId    String? // Google sub, Apple sub, etc.
   emailVerified Boolean      @default(false)
   role          UserRole     @default(USER)
-  
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  deletedAt     DateTime?    // Soft delete
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
 
   // Relations
-  refreshTokens     RefreshToken[]
-  userVehicles      UserVehicle[]
-  favorites         Favorite[]
-  reviews           Review[]
-  submittedStations Station[]     @relation("SubmittedStations")
+  refreshTokens           RefreshToken[]
+  userVehicles            UserVehicle[]
+  favorites               Favorite[]
+  reviews                 Review[]
+  submittedStations       Station[]        @relation("SubmittedStations")
   cngApplications         CngApplication[] @relation("CngApplicant")
   reviewedCngApplications CngApplication[] @relation("CngReviewer")
 
@@ -116,14 +116,14 @@ model User {
 }
 
 model RefreshToken {
-  id          String   @id @default(uuid())
-  tokenHash   String   @unique // SHA256 hash of the token
-  userId      String
-  userAgent   String?
-  ipAddress   String?
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  revokedAt   DateTime?
+  id        String    @id @default(uuid())
+  tokenHash String    @unique // SHA256 hash of the token
+  userId    String
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -139,13 +139,13 @@ model RefreshToken {
 // ============================================================================
 
 model VehicleBrand {
-  id        String   @id  // Stable id for frontend (e.g. "tesla", "audi") — images resolved in frontend
-  name      String
-  logoUrl   String?  // Optional; frontend can resolve by id
-  darkLogo  Boolean? @default(false)  // Prefer dark logo variant
-  country   String?  // Country of origin
-  isActive  Boolean  @default(true)
-  
+  id       String   @id // Stable id for frontend (e.g. "tesla", "audi") — images resolved in frontend
+  name     String
+  logoUrl  String? // Optional; frontend can resolve by id
+  darkLogo Boolean? @default(false) // Prefer dark logo variant
+  country  String? // Country of origin
+  isActive Boolean  @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -157,20 +157,20 @@ model VehicleBrand {
 }
 
 model VehicleModel {
-  id              String         @id  // Stable id for frontend (e.g. "model-s", "q4-etron")
-  brandId         String
-  name            String
-  powertrain      PowertrainType // BEV, PHEV, EREV
-  connectors      Json           // Array of ConnectorType strings, e.g. ["NACS", "CCS2"]
-  connectorType   ConnectorType? // Optional legacy single connector (first of connectors)
-  year            Int?           // Model year if specific
+  id                 String         @id // Stable id for frontend (e.g. "model-s", "q4-etron")
+  brandId            String
+  name               String
+  powertrain         PowertrainType // BEV, PHEV, EREV
+  connectors         Json // Array of ConnectorType strings, e.g. ["NACS", "CCS2"]
+  connectorType      ConnectorType? // Optional legacy single connector (first of connectors)
+  year               Int? // Model year if specific
   batteryCapacityKwh Float?
-  rangeKm         Float?         // Estimated range
-  imageUrl        String?        // Optional; frontend can resolve by id
-  isActive        Boolean        @default(true)
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  rangeKm            Float? // Estimated range
+  imageUrl           String? // Optional; frontend can resolve by id
+  isActive           Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   brand        VehicleBrand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
@@ -183,15 +183,15 @@ model VehicleModel {
 }
 
 model UserVehicle {
-  id          String   @id @default(uuid())
-  userId      String
-  modelId     String
-  nickname    String?
-  isPrimary   Boolean  @default(false)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
+  id        String  @id @default(uuid())
+  userId    String
+  modelId   String
+  nickname  String?
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Relations
   user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -208,14 +208,14 @@ model UserVehicle {
 // ============================================================================
 
 model Network {
-  id          String    @id @default(uuid())
-  name        String    @unique
+  id          String  @id @default(uuid())
+  name        String  @unique
   website     String?
   logoUrl     String?
   phoneNumber String?
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   stations Station[]
@@ -224,68 +224,84 @@ model Network {
 }
 
 model Station {
-  id              String    @id @default(uuid())
-  networkId       String?
-  name            String
-  description     String?
-  stationType     StationType @default(EV)
-  
+  id           String      @id @default(uuid())
+  networkId    String?
+  name         String
+  description  String?
+  stationType  StationType @default(EV)
+  operatorName String?
+  serviceType  String?
+
   // Location
-  address         String
-  area            String?   // Neighbourhood / district (e.g. "Victoria Island", "Lekki")
-  city            String
-  state           String
-  postalCode      String?
-  country         String    @default("NG")  // Nigeria first
-  latitude        Float
-  longitude       Float
-  timezone        String    @default("Africa/Lagos")
-  
+  address          String
+  area             String? // Neighbourhood / district (e.g. "Victoria Island", "Lekki")
+  city             String
+  state            String
+  postalCode       String?
+  country          String  @default("NG") // Nigeria first
+  latitude         Float
+  longitude        Float
+  timezone         String  @default("Africa/Lagos")
+  locationAccuracy String?
+  navigationReady  Boolean @default(false)
+
   // Status
-  isActive        Boolean       @default(true)
-  isVerified      Boolean       @default(false)  // Admin verified
-  status          StationStatus @default(PENDING)
-  
+  isActive   Boolean       @default(true)
+  isVerified Boolean       @default(false) // Admin verified
+  status     StationStatus @default(PENDING)
+
   // Submission tracking
-  submittedBy     String?       // FK → User.id (null for seeded/admin-created stations)
-  rejectionReason String?       // Set when status = REJECTED
-  
+  submittedBy     String? // FK → User.id (null for seeded/admin-created stations)
+  rejectionReason String? // Set when status = REJECTED
+
   // Operating Hours (JSON: { "mon": { "open": "08:00", "close": "22:00" }, ... } or null for 24h)
   // Use "24h" as special value for always open
-  operatingHours  Json?
-  
+  operatingHours Json?
+
   // Amenities (JSON array: ["restrooms", "wifi", "food", "shopping", "parking"])
-  amenities       Json      @default("[]")
-  
+  amenities Json @default("[]")
+
   // Pricing (JSON: { "perKwh": 350, "perMinute": null, "sessionFee": 500, "currency": "NGN" })
-  pricing         Json?
+  pricing          Json?
+  priceNote        String?
+  openingHoursNote String?
 
   // CNG-specific metadata (JSON: { "dispenserCount": 4, "pressureRating": "200 bar", "paymentMethods": ["cash", "card"], "availabilityStatus": "AVAILABLE" })
-  cngDetails      Json?
-  
+  cngDetails Json?
+
+  // Research provenance and confidence
+  accessNotes            String?
+  operationalStatus      String?
+  verificationTier       String?
+  verificationConfidence Float?
+  verificationBasis      String?
+  verifiedAt             DateTime?
+  sourceLinks            Json      @default("[]")
+  researchMetadata       Json?
+
   // Contact
-  phoneNumber     String?
-  email           String?
-  
+  phoneNumber String?
+  email       String?
+
   // Aggregate Stats (denormalized for performance)
-  totalPorts      Int       @default(0)
-  availablePorts  Int       @default(0)
-  avgRating       Float?
-  reviewCount     Int       @default(0)
-  
+  totalPorts     Int    @default(0)
+  availablePorts Int    @default(0)
+  avgRating      Float?
+  reviewCount    Int    @default(0)
+
   // Tracking
   lastStatusUpdate DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
   // Relations
-  network    Network?       @relation(fields: [networkId], references: [id])
-  submitter  User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
-  ports      Port[]
-  favorites  Favorite[]
-  reviews    Review[]
-  images     StationImage[]
+  network   Network?       @relation(fields: [networkId], references: [id])
+  submitter User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
+  ports     Port[]
+  favorites Favorite[]
+  reviews   Review[]
+  images    StationImage[]
 
   @@index([networkId])
   @@index([latitude, longitude])
@@ -293,31 +309,33 @@ model Station {
   @@index([isActive])
   @@index([stationType])
   @@index([avgRating])
+  @@index([verificationTier])
+  @@index([navigationReady])
   @@map("stations")
 }
 
 model Port {
-  id                   String        @id @default(uuid())
-  stationId            String
-  connectorType        ConnectorType
-  chargerType          ChargerType
-  powerKw              Float
-  status               PortStatus    @default(UNKNOWN)
-  
+  id            String        @id @default(uuid())
+  stationId     String
+  connectorType ConnectorType
+  chargerType   ChargerType
+  powerKw       Float?
+  status        PortStatus    @default(UNKNOWN)
+
   // Pricing (can override station pricing)
-  pricePerKwh          Float?
-  pricePerMinute       Float?
-  pricePerSession      Float?
-  
+  pricePerKwh     Float?
+  pricePerMinute  Float?
+  pricePerSession Float?
+
   // Port identifier at the station (e.g., "A1", "B2")
-  portNumber           String?
-  
+  portNumber String?
+
   // Availability tracking
-  estimatedAvailableAt DateTime?     // When port might be available if IN_USE
+  estimatedAvailableAt DateTime? // When port might be available if IN_USE
   lastStatusUpdate     DateTime?
-  
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
@@ -329,15 +347,15 @@ model Port {
 }
 
 model StationImage {
-  id          String   @id @default(uuid())
-  stationId   String
-  url         String
-  caption     String?
-  sortOrder   Int      @default(0)
-  isPrimary   Boolean  @default(false)
-  uploadedBy  String?  // userId who uploaded
-  
-  createdAt   DateTime @default(now())
+  id         String  @id @default(uuid())
+  stationId  String
+  url        String
+  caption    String?
+  sortOrder  Int     @default(0)
+  isPrimary  Boolean @default(false)
+  uploadedBy String? // userId who uploaded
+
+  createdAt DateTime @default(now())
 
   // Relations
   station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
@@ -368,15 +386,15 @@ model Favorite {
 }
 
 model Review {
-  id          String   @id @default(uuid())
-  userId      String
-  stationId   String
-  rating      Int      // 1-5 stars
-  comment     String?
-  anonHandle  String?  // e.g. "QuietCraneBrewer" — generated once on creation, never changes
+  id         String  @id @default(uuid())
+  userId     String
+  stationId  String
+  rating     Int // 1-5 stars
+  comment    String?
+  anonHandle String? // e.g. "QuietCraneBrewer" — generated once on creation, never changes
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   // Relations
@@ -393,10 +411,10 @@ model Review {
 // ============================================================================
 
 model CngApplication {
-  id              String               @id @default(uuid())
-  reference       String               @unique
-  userId          String
-  status          CngApplicationStatus @default(DRAFT)
+  id        String               @id @default(uuid())
+  reference String               @unique
+  userId    String
+  status    CngApplicationStatus @default(DRAFT)
 
   // Personal details
   firstName       String?

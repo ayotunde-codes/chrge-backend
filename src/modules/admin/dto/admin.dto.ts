@@ -158,10 +158,28 @@ export class CreateStationDto {
   @IsEnum(StationType)
   stationType?: StationType;
 
+  @ApiPropertyOptional({ example: 'Ardova' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  operatorName?: string;
+
+  @ApiPropertyOptional({ example: 'ev_charging' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  serviceType?: string;
+
   @ApiProperty({ example: '123 Admiralty Way' })
   @IsString()
   @MaxLength(500)
   address: string;
+
+  @ApiPropertyOptional({ example: 'Victoria Island' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  area?: string;
 
   @ApiProperty({ example: 'Lekki' })
   @IsString()
@@ -211,6 +229,75 @@ export class CreateStationDto {
   @IsOptional()
   @IsBoolean()
   isVerified?: boolean;
+
+  @ApiPropertyOptional({ example: 'google_rooftop' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  locationAccuracy?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  navigationReady?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  priceNote?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  openingHoursNote?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  accessNotes?: string;
+
+  @ApiPropertyOptional({ example: 'operational' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  operationalStatus?: string;
+
+  @ApiPropertyOptional({ example: 'A' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  verificationTier?: string;
+
+  @ApiPropertyOptional({ example: 0.95 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  verificationConfidence?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  verificationBasis?: string;
+
+  @ApiPropertyOptional({ example: '2026-09-05T00:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  verifiedAt?: string;
+
+  @ApiPropertyOptional({ type: [Object] })
+  @IsOptional()
+  @IsArray()
+  sourceLinks?: Array<{ kind: string; url: string }>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  researchMetadata?: Record<string, unknown>;
 
   @ApiPropertyOptional({
     example: { mon: { open: '08:00', close: '22:00' }, tue: { open: '08:00', close: '22:00' } },
@@ -378,11 +465,9 @@ export class PortResponseDto {
   @ApiProperty() stationId: string;
   @ApiProperty() connectorType: string;
   @ApiProperty() chargerType: string;
-  @ApiProperty() powerKw: number;
+  @ApiPropertyOptional({ nullable: true }) powerKw: number | null;
   @ApiProperty() status: string;
   @ApiPropertyOptional() portNumber: string | null;
   @ApiProperty() createdAt: Date;
 }
-
-
 

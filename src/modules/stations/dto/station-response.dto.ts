@@ -8,11 +8,19 @@ class ConnectorSummaryDto {
   @ApiProperty({ example: 'CCS2' })
   type: string;
 
-  @ApiProperty({ example: 150 })
-  powerKw: number;
+  @ApiPropertyOptional({ example: 150, nullable: true })
+  powerKw: number | null;
 
   @ApiProperty({ example: 4 })
   count: number;
+}
+
+class StationSourceLinkDto {
+  @ApiProperty({ example: 'official_directory' })
+  kind: string;
+
+  @ApiProperty({ example: 'https://example.com/station' })
+  url: string;
 }
 
 export class StationCardResponseDto {
@@ -21,6 +29,39 @@ export class StationCardResponseDto {
 
   @ApiProperty({ example: 'Lekki Phase 1 Supercharger' })
   name: string;
+
+  @ApiPropertyOptional({ example: 'Ardova', nullable: true })
+  operatorName: string | null;
+
+  @ApiPropertyOptional({ example: 'ev_charging', nullable: true })
+  serviceType: string | null;
+
+  @ApiPropertyOptional({ example: 'google_rooftop', nullable: true })
+  locationAccuracy: string | null;
+
+  @ApiProperty({ example: true, description: 'Whether the pin is precise enough for turn-by-turn navigation' })
+  navigationReady: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  accessNotes: string | null;
+
+  @ApiPropertyOptional({ example: 'operational', nullable: true })
+  operationalStatus: string | null;
+
+  @ApiPropertyOptional({ example: 'A', nullable: true })
+  verificationTier: string | null;
+
+  @ApiPropertyOptional({ example: 0.95, nullable: true })
+  verificationConfidence: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  openingHoursNote: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  priceNote: string | null;
+
+  @ApiProperty({ type: [StationSourceLinkDto] })
+  sourceLinks: StationSourceLinkDto[];
 
   @ApiProperty({ example: '123 Admiralty Way' })
   address: string;
@@ -63,7 +104,7 @@ export class StationCardResponseDto {
 
   @ApiProperty({
     example: 'AVAILABLE',
-    enum: ['AVAILABLE', 'IN_USE', 'OUT_OF_SERVICE'],
+    enum: ['AVAILABLE', 'IN_USE', 'OUT_OF_SERVICE', 'UNKNOWN'],
     description: 'Overall station availability status',
   })
   statusSummary: string;
@@ -148,8 +189,8 @@ class PortDetailDto {
   @ApiProperty({ example: 'DCFC' })
   chargerType: string;
 
-  @ApiProperty({ example: 150 })
-  powerKw: number;
+  @ApiPropertyOptional({ example: 150, nullable: true })
+  powerKw: number | null;
 
   @ApiProperty({ example: 'AVAILABLE', enum: ['AVAILABLE', 'IN_USE', 'OUT_OF_ORDER', 'UNKNOWN'] })
   status: string;
@@ -218,6 +259,48 @@ export class StationDetailResponseDto {
 
   @ApiProperty({ example: 'Lekki Phase 1 Supercharger' })
   name: string;
+
+  @ApiPropertyOptional({ example: 'Ardova', nullable: true })
+  operatorName: string | null;
+
+  @ApiPropertyOptional({ example: 'ev_charging', nullable: true })
+  serviceType: string | null;
+
+  @ApiPropertyOptional({ example: 'google_rooftop', nullable: true })
+  locationAccuracy: string | null;
+
+  @ApiProperty({ example: true })
+  navigationReady: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  accessNotes: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  operationalStatus: string | null;
+
+  @ApiPropertyOptional({ example: 'A', nullable: true })
+  verificationTier: string | null;
+
+  @ApiPropertyOptional({ example: 0.95, nullable: true })
+  verificationConfidence: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  verificationBasis: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  verifiedAt: Date | null;
+
+  @ApiProperty({ type: [StationSourceLinkDto] })
+  sourceLinks: StationSourceLinkDto[];
+
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  researchMetadata: unknown;
+
+  @ApiPropertyOptional({ nullable: true })
+  openingHoursNote: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  priceNote: string | null;
 
   @ApiPropertyOptional({ example: 'Fast charging station near the mall' })
   description: string | null;
