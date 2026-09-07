@@ -103,7 +103,7 @@ export class TokenService {
 
     if (storedToken.revokedAt) {
       // Token reuse detected - potentially compromised
-      this.logger.warn(`Refresh token reuse detected for user: ${storedToken.userId}`);
+      this.logger.warn('Refresh token reuse detected; revoking the associated sessions');
       // Revoke all tokens for this user as a security measure
       await this.revokeAllUserTokens(storedToken.userId);
       throw new UnauthorizedException('Token has been revoked. Please login again.');

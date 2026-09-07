@@ -45,11 +45,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'Internal server error';
-      this.logger.error(`Unhandled exception: ${exception.message}`, exception.stack);
+      this.logger.error(`Unhandled exception type=${exception.name}`);
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'Internal server error';
-      this.logger.error(`Unknown exception: ${JSON.stringify(exception)}`);
+      this.logger.error('Unknown non-error exception');
     }
 
     const errorResponse: ApiResponse<null> = {
