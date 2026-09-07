@@ -7,6 +7,9 @@ import { CngApplicationAccessGuard } from './cng-application-access.guard';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
+import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
+import { AdminCngReviewService } from './admin-cng-review.service';
+import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
 
 @Module({
   imports: [ConfigModule],
@@ -17,6 +20,9 @@ import { DocumentStorageService } from './document-storage.service';
     SensitiveDataService,
     OtpDeliveryService,
     DocumentStorageService,
+    StaffAccessGuard,
+    AdminCngReviewService,
+    AdminAuditInterceptor,
   ],
   exports: [CngApplicationsService],
 })

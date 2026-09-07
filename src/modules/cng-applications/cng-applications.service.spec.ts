@@ -418,7 +418,7 @@ describe('CngApplicationsService', () => {
 
     expect(result.applications[0]).toEqual(
       expect.objectContaining({
-        applicant: expect.objectContaining({ email: 'emeka@example.com' }),
+        applicant: expect.objectContaining({ email: 'em•••@example.com', phone: '••••••5678' }),
       }),
     );
     expect(result.applications[0]).not.toHaveProperty('personal');

@@ -4,6 +4,8 @@ import { ConnectorType, PortStatus, ChargerType, PowertrainType } from '@prisma/
 
 import { AdminService } from './admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -34,6 +36,8 @@ describe('AdminService', () => {
       count: jest.fn(),
     },
   };
+  const mockAudit = { create: jest.fn() };
+  const mockCache = { del: jest.fn() };
 
   const mockBrand = {
     id: 'tesla',
@@ -126,7 +130,12 @@ describe('AdminService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AdminService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        AdminService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuditService, useValue: mockAudit },
+        { provide: CACHE_MANAGER, useValue: mockCache },
+      ],
     }).compile();
 
     service = module.get<AdminService>(AdminService);

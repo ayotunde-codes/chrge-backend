@@ -29,6 +29,19 @@ enum UserRole {
   OPERATOR
 }
 
+enum AccountType {
+  CONSUMER
+  STAFF
+  SERVICE
+}
+
+enum StaffStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
 enum ConnectorType {
   CCS1
   CCS2
@@ -62,8 +75,23 @@ enum PowertrainType {
 
 enum StationStatus {
   PENDING
+  CHANGES_REQUESTED
   APPROVED
   REJECTED
+  WITHDRAWN
+}
+
+enum AuditSensitivity {
+  STANDARD
+  SENSITIVE
+  RESTRICTED
+}
+
+enum DocumentScanStatus {
+  PENDING
+  CLEAN
+  QUARANTINED
+  FAILED
 }
 
 enum StationType {
@@ -96,6 +124,7 @@ model User {
   providerId    String? // Google sub, Apple sub, etc.
   emailVerified Boolean      @default(false)
   role          UserRole     @default(USER)
+  accountType   AccountType  @default(CONSUMER)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -106,9 +135,14 @@ model User {
   userVehicles            UserVehicle[]
   favorites               Favorite[]
   reviews                 Review[]
-  submittedStations       Station[]        @relation("SubmittedStations")
-  cngApplications         CngApplication[] @relation("CngApplicant")
-  reviewedCngApplications CngApplication[] @relation("CngReviewer")
+  submittedStations       Station[]            @relation("SubmittedStations")
+  cngApplications         CngApplication[]     @relation("CngApplicant")
+  reviewedCngApplications CngApplication[]     @relation("CngReviewer")
+  reviewedStations        Station[]            @relation("ReviewedStations")
+  auditEvents             AuditEvent[]         @relation("AuditActor")
+  staffProfile            StaffProfile?
+  staffInvitationsCreated StaffInvitation[]    @relation("StaffInviter")
+  staffAuthChallenges     StaffAuthChallenge[]
 
   @@index([email])
   @@index([providerId])
@@ -116,14 +150,18 @@ model User {
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  tokenHash String    @unique // SHA256 hash of the token
-  userId    String
-  userAgent String?
-  ipAddress String?
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-  revokedAt DateTime?
+  id            String    @id @default(uuid())
+  tokenHash     String    @unique // SHA256 hash of the token
+  userId        String
+  userAgent     String?
+  ipAddress     String?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  audience      String    @default("chrge-consumer")
+  environment   String    @default("development")
+  mfaVerifiedAt DateTime?
+  parentTokenId String?
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -131,7 +169,115 @@ model RefreshToken {
   @@index([userId])
   @@index([tokenHash])
   @@index([expiresAt])
+  @@index([userId, audience, revokedAt])
   @@map("refresh_tokens")
+}
+
+model StaffProfile {
+  id                 String      @id @default(uuid())
+  userId             String      @unique
+  status             StaffStatus @default(INVITED)
+  staffRoleId        String
+  mfaSecretEncrypted String?
+  mfaEnabledAt       DateTime?
+  recoveryCodesHash  Json?
+  invitedAt          DateTime?
+  activatedAt        DateTime?
+  suspendedAt        DateTime?
+  disabledAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role StaffRole @relation(fields: [staffRoleId], references: [id])
+
+  @@index([status])
+  @@index([staffRoleId, status])
+  @@map("staff_profiles")
+}
+
+model StaffRole {
+  id          String   @id
+  name        String   @unique
+  description String?
+  isTopLevel  Boolean  @default(false)
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  staff       StaffProfile[]
+  permissions StaffRolePermission[]
+  invitations StaffInvitation[]
+
+  @@map("staff_roles")
+}
+
+model StaffPermission {
+  id          String                @id
+  description String?
+  roles       StaffRolePermission[]
+
+  @@map("staff_permissions")
+}
+
+model StaffRolePermission {
+  roleId       String
+  permissionId String
+  role         StaffRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   StaffPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("staff_role_permissions")
+}
+
+model StaffInvitation {
+  id          String    @id @default(uuid())
+  email       String
+  staffRoleId String
+  tokenHash   String    @unique
+  invitedBy   String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  inviter   User      @relation("StaffInviter", fields: [invitedBy], references: [id])
+  staffRole StaffRole @relation(fields: [staffRoleId], references: [id])
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+  @@map("staff_invitations")
+}
+
+model ServicePrincipal {
+  id             String    @id @default(uuid())
+  name           String    @unique
+  credentialHash String    @unique
+  scopes         Json
+  environment    String
+  expiresAt      DateTime
+  rotatedAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([environment, revokedAt])
+  @@map("service_principals")
+}
+
+model StaffAuthChallenge {
+  id          String    @id @default(uuid())
+  userId      String
+  bindingHash String
+  attempts    Int       @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("staff_auth_challenges")
 }
 
 // ============================================================================
@@ -251,8 +397,15 @@ model Station {
   status     StationStatus @default(PENDING)
 
   // Submission tracking
-  submittedBy     String? // FK → User.id (null for seeded/admin-created stations)
-  rejectionReason String? // Set when status = REJECTED
+  submittedBy        String? // FK → User.id (null for seeded/admin-created stations)
+  rejectionReason    String? // Set when status = REJECTED
+  reviewReason       String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  changesRequestedAt DateTime?
+  withdrawnAt        DateTime?
+  submissionRevision Int       @default(1)
+  submissionKey      String?   @unique
 
   // Operating Hours (JSON: { "mon": { "open": "08:00", "close": "22:00" }, ... } or null for 24h)
   // Use "24h" as special value for always open
@@ -298,6 +451,7 @@ model Station {
   // Relations
   network   Network?       @relation(fields: [networkId], references: [id])
   submitter User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
+  reviewer  User?          @relation("ReviewedStations", fields: [reviewedBy], references: [id], onDelete: SetNull)
   ports     Port[]
   favorites Favorite[]
   reviews   Review[]
@@ -307,6 +461,8 @@ model Station {
   @@index([latitude, longitude])
   @@index([city, state])
   @@index([isActive])
+  @@index([status, isActive, createdAt])
+  @@index([submittedBy, createdAt])
   @@index([stationType])
   @@index([avgRating])
   @@index([verificationTier])
@@ -502,7 +658,7 @@ model CngApplication {
 }
 
 model CngApplicationDocument {
-  id             String   @id @default(uuid())
+  id             String             @id @default(uuid())
   applicationId  String
   type           String
   originalName   String
@@ -510,7 +666,10 @@ model CngApplicationDocument {
   mimeType       String
   sizeBytes      Int
   checksumSha256 String
-  uploadedAt     DateTime @default(now())
+  uploadedAt     DateTime           @default(now())
+  scanStatus     DocumentScanStatus @default(PENDING)
+  scannedAt      DateTime?
+  scannerVersion String?
 
   application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
@@ -534,4 +693,32 @@ model CngPhoneVerification {
   @@index([applicationId, phone, createdAt])
   @@index([expiresAt])
   @@map("cng_phone_verifications")
+}
+
+// Append-only record of privileged access and mutations. Application code exposes
+// create/read operations only; production DB permissions should deny UPDATE/DELETE.
+model AuditEvent {
+  id            String           @id @default(uuid())
+  actorId       String?
+  actorRole     UserRole?
+  action        String
+  targetType    String
+  targetId      String?
+  reason        String?
+  requestId     String
+  ipAddress     String?
+  userAgent     String?
+  sensitivity   AuditSensitivity @default(STANDARD)
+  beforeSummary Json?
+  afterSummary  Json?
+  metadata      Json?
+  occurredAt    DateTime         @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([targetType, targetId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("audit_events")
 }

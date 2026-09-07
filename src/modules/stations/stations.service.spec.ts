@@ -73,6 +73,7 @@ describe('StationsService', () => {
     timezone: 'Africa/Lagos',
     isActive: true,
     isVerified: true,
+    status: 'APPROVED',
     operatingHours: { mon: { open: '08:00', close: '22:00' } },
     amenities: ['wifi', 'restrooms'],
     pricing: { perKwh: 350, currency: 'NGN' },
@@ -260,7 +261,7 @@ describe('StationsService', () => {
       const result = await service.findById('station-123');
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', isActive: true, deletedAt: null },
+        where: { id: 'station-123', status: 'APPROVED', isActive: true, deletedAt: null },
         include: expect.objectContaining({
           network: expect.any(Object),
           ports: expect.any(Object),
@@ -343,7 +344,7 @@ describe('StationsService', () => {
       const result = await service.getReviews('station-123', 10);
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', deletedAt: null },
+        where: { id: 'station-123', status: 'APPROVED', isActive: true, deletedAt: null },
       });
       expect(mockPrismaService.review.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -357,11 +358,13 @@ describe('StationsService', () => {
     });
 
     it('should return nextCursor when more results exist', async () => {
-      const manyReviews = Array(11).fill(null).map((_, i) => ({
-        ...mockReview,
-        id: `review-${i}`,
-        createdAt: new Date(Date.now() - i * 1000),
-      }));
+      const manyReviews = Array(11)
+        .fill(null)
+        .map((_, i) => ({
+          ...mockReview,
+          id: `review-${i}`,
+          createdAt: new Date(Date.now() - i * 1000),
+        }));
       mockPrismaService.station.findFirst.mockResolvedValue(mockStation);
       mockPrismaService.review.findMany.mockResolvedValue(manyReviews);
 
@@ -448,7 +451,7 @@ describe('StationsService', () => {
       const result = await service.addFavorite('user-123', 'station-123');
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', deletedAt: null },
+        where: { id: 'station-123', status: 'APPROVED', isActive: true, deletedAt: null },
       });
       expect(mockPrismaService.favorite.upsert).toHaveBeenCalledWith({
         where: { userId_stationId: { userId: 'user-123', stationId: 'station-123' } },
@@ -590,33 +593,35 @@ describe('StationsService', () => {
     });
 
     it('should return nextCursor when more results exist', async () => {
-      const rawStations = Array(21).fill(null).map((_, i) => ({
-        id: `station-${i}`,
-        name: `Station ${i}`,
-        description: null,
-        address: 'Address',
-        city: 'Lagos',
-        state: 'Lagos',
-        postal_code: null,
-        country: 'Nigeria',
-        latitude: 6.4281,
-        longitude: 3.4219,
-        timezone: 'Africa/Lagos',
-        is_active: true,
-        is_verified: false,
-        operating_hours: null,
-        amenities: [],
-        pricing: null,
-        phone_number: null,
-        total_ports: 2,
-        available_ports: 1,
-        avg_rating: null,
-        review_count: 0,
-        last_status_update: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        distance_km: i * 0.5,
-      }));
+      const rawStations = Array(21)
+        .fill(null)
+        .map((_, i) => ({
+          id: `station-${i}`,
+          name: `Station ${i}`,
+          description: null,
+          address: 'Address',
+          city: 'Lagos',
+          state: 'Lagos',
+          postal_code: null,
+          country: 'Nigeria',
+          latitude: 6.4281,
+          longitude: 3.4219,
+          timezone: 'Africa/Lagos',
+          is_active: true,
+          is_verified: false,
+          operating_hours: null,
+          amenities: [],
+          pricing: null,
+          phone_number: null,
+          total_ports: 2,
+          available_ports: 1,
+          avg_rating: null,
+          review_count: 0,
+          last_status_update: null,
+          created_at: new Date(),
+          updated_at: new Date(),
+          distance_km: i * 0.5,
+        }));
 
       mockPrismaService.$queryRaw.mockResolvedValue(rawStations);
       mockPrismaService.port.findMany.mockResolvedValue([]);
