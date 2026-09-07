@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -134,8 +135,12 @@ export class StationsController {
   async submitStation(
     @CurrentUser() user: JwtPayload,
     @Body() dto: SubmitStationDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<StationDetailResponseDto> {
-    const station = await this.stationsService.submitStation(user.sub, dto);
+    if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException('Invalid Idempotency-Key header');
+    }
+    const station = await this.stationsService.submitStation(user.sub, dto, idempotencyKey);
     return station as unknown as StationDetailResponseDto;
   }
 
@@ -149,6 +154,18 @@ export class StationsController {
   ): Promise<{ stations: StationCardResponseDto[]; nextCursor: null }> {
     const stations = await this.stationsService.getMySubmissions(user.sub);
     return { stations: stations as unknown as StationCardResponseDto[], nextCursor: null };
+  }
+
+  @Delete('my-submissions/:id')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Withdraw the current user's pending or rejected station submission" })
+  async withdrawSubmission(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.stationsService.withdrawSubmission(user.sub, id);
   }
 
   @Get('identity/preview')
@@ -206,14 +223,20 @@ export class StationsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create or update a review for a station' })
-  @ApiResponse({ status: 201, description: 'Review saved' })
+  @ApiResponse({ status: 201, type: ReviewResponseDto, description: 'Review saved' })
   async createReview(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateReviewDto,
-  ): Promise<{ message: string; reviewId: string }> {
+  ): Promise<ReviewResponseDto> {
     const review = await this.stationsService.createReview(user.sub, id, dto);
-    return { message: 'Review saved successfully', reviewId: review.id };
+    return {
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.createdAt,
+      anonHandle: review.anonHandle ?? this.stationsService.getIdentityPreview().examples[0],
+    };
   }
 
   @Post(':id/favorite')

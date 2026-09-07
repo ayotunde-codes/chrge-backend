@@ -16,13 +16,17 @@ describe('StationsService', () => {
     station: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
+      create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     port: {
       findMany: jest.fn(),
+      createMany: jest.fn(),
     },
     stationImage: {
       findMany: jest.fn(),
+      create: jest.fn(),
     },
     favorite: {
       findUnique: jest.fn(),
@@ -38,6 +42,7 @@ describe('StationsService', () => {
       aggregate: jest.fn(),
     },
     $queryRaw: jest.fn(),
+    $transaction: jest.fn(),
   };
 
   const mockVehiclesService = {
@@ -72,6 +77,7 @@ describe('StationsService', () => {
     longitude: 3.4219,
     timezone: 'Africa/Lagos',
     isActive: true,
+    status: 'APPROVED',
     isVerified: true,
     operatingHours: { mon: { open: '08:00', close: '22:00' } },
     amenities: ['wifi', 'restrooms'],
@@ -260,7 +266,7 @@ describe('StationsService', () => {
       const result = await service.findById('station-123');
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', isActive: true, deletedAt: null },
+        where: { id: 'station-123', isActive: true, status: 'APPROVED', deletedAt: null },
         include: expect.objectContaining({
           network: expect.any(Object),
           ports: expect.any(Object),
@@ -306,6 +312,25 @@ describe('StationsService', () => {
       );
     });
 
+    it('returns equivalent JSON on a repeated cached request', async () => {
+      const stationWithRelations = {
+        ...mockStation,
+        network: mockNetwork,
+        ports: [{ ...mockPort, status: PortStatus.IN_USE, estimatedAvailableAt: new Date(Date.now() + 60_000) }],
+        images: [mockImage],
+      };
+      mockCacheManager.get.mockResolvedValueOnce(undefined);
+      mockPrismaService.station.findFirst.mockResolvedValue(stationWithRelations);
+
+      const first = await service.findById('station-123');
+      const cachedDto = mockCacheManager.set.mock.calls.find(([key]) => key === 'stations:detail:station-123')?.[1];
+      mockCacheManager.get.mockResolvedValueOnce(JSON.parse(JSON.stringify(cachedDto)));
+      const second = await service.findById('station-123');
+
+      expect(second).toEqual(JSON.parse(JSON.stringify(first)));
+      expect(mockPrismaService.station.findFirst).toHaveBeenCalledTimes(1);
+    });
+
     it('should include favorite status for authenticated user', async () => {
       const stationWithRelations = {
         ...mockStation,
@@ -343,7 +368,7 @@ describe('StationsService', () => {
       const result = await service.getReviews('station-123', 10);
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', deletedAt: null },
+        where: { id: 'station-123', isActive: true, status: 'APPROVED', deletedAt: null },
       });
       expect(mockPrismaService.review.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -448,7 +473,7 @@ describe('StationsService', () => {
       const result = await service.addFavorite('user-123', 'station-123');
 
       expect(mockPrismaService.station.findFirst).toHaveBeenCalledWith({
-        where: { id: 'station-123', deletedAt: null },
+        where: { id: 'station-123', isActive: true, status: 'APPROVED', deletedAt: null },
       });
       expect(mockPrismaService.favorite.upsert).toHaveBeenCalledWith({
         where: { userId_stationId: { userId: 'user-123', stationId: 'station-123' } },
@@ -627,6 +652,65 @@ describe('StationsService', () => {
 
       expect(result.stations).toHaveLength(20);
       expect(result.nextCursor).toBeDefined();
+    });
+  });
+
+  describe('submitStation', () => {
+    it('creates one private pending row and returns it to its owner', async () => {
+      const pending = {
+        ...mockStation,
+        id: 'pending-123',
+        status: 'PENDING',
+        isActive: false,
+        isVerified: false,
+        submittedBy: 'user-123',
+        submissionKey: 'station-retry-key',
+        network: null,
+        ports: [],
+        images: [],
+      };
+      mockPrismaService.station.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(pending);
+      mockPrismaService.station.create.mockResolvedValue(pending);
+      mockPrismaService.$transaction.mockImplementation((callback) => callback(mockPrismaService));
+
+      const result = await service.submitStation(
+        'user-123',
+        {
+          name: 'QA Pending Station',
+          address: '1 Test Road',
+          city: 'Lagos',
+          state: 'Lagos',
+          latitude: 6.5,
+          longitude: 3.4,
+        },
+        'station-retry-key',
+      );
+
+      expect(mockPrismaService.station.create).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.station.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'PENDING', isActive: false }),
+        }),
+      );
+      expect(result).toEqual(expect.objectContaining({ id: 'pending-123', status: 'PENDING' }));
+    });
+  });
+
+  describe('withdrawSubmission', () => {
+    it('withdraws only the owner pending or rejected submission', async () => {
+      mockPrismaService.station.updateMany.mockResolvedValue({ count: 1 });
+      await service.withdrawSubmission('user-123', 'pending-123');
+      expect(mockPrismaService.station.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'pending-123',
+            submittedBy: 'user-123',
+            status: { in: ['PENDING', 'REJECTED'] },
+          }),
+        }),
+      );
     });
   });
 

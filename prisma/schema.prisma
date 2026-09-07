@@ -252,6 +252,7 @@ model Station {
 
   // Submission tracking
   submittedBy     String? // FK → User.id (null for seeded/admin-created stations)
+  submissionKey   String? // Client-generated idempotency key for community submissions
   rejectionReason String? // Set when status = REJECTED
 
   // Operating Hours (JSON: { "mon": { "open": "08:00", "close": "22:00" }, ... } or null for 24h)
@@ -307,6 +308,7 @@ model Station {
   @@index([latitude, longitude])
   @@index([city, state])
   @@index([isActive])
+  @@unique([submittedBy, submissionKey])
   @@index([stationType])
   @@index([avgRating])
   @@index([verificationTier])

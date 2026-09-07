@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { VehicleBrand, VehicleModel, Station, Port, StationImage, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -14,7 +16,18 @@ import { ReviewStationDto } from '../stations/dto/submit-station.dto';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  private async invalidateStationCaches(stationId?: string): Promise<void> {
+    const version = (await this.cache.get<number>('stations:top-picks:version')) ?? 0;
+    await Promise.all([
+      ...(stationId ? [this.cache.del(`stations:detail:${stationId}`)] : []),
+      this.cache.set('stations:top-picks:version', version + 1),
+    ]);
+  }
 
   // ============================================================================
   // VEHICLE BRANDS
@@ -86,7 +99,7 @@ export class AdminService {
   // ============================================================================
 
   async createStation(dto: CreateStationDto): Promise<Station> {
-    return this.prisma.station.create({
+    const station = await this.prisma.station.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -127,6 +140,8 @@ export class AdminService {
         researchMetadata: dto.researchMetadata as Prisma.InputJsonValue | undefined,
       },
     });
+    await this.invalidateStationCaches(station.id);
+    return station;
   }
 
   async reviewStation(stationId: string, dto: ReviewStationDto): Promise<Station> {
@@ -139,7 +154,7 @@ export class AdminService {
       throw new BadRequestException('rejectionReason is required when rejecting a station');
     }
 
-    return this.prisma.station.update({
+    const updated = await this.prisma.station.update({
       where: { id: stationId },
       data: {
         status: dto.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
@@ -148,6 +163,8 @@ export class AdminService {
         rejectionReason: dto.action === 'REJECT' ? dto.rejectionReason : null,
       },
     });
+    await this.invalidateStationCaches(stationId);
+    return updated;
   }
 
   async updateStation(id: string, dto: UpdateStationDto): Promise<Station> {
@@ -156,7 +173,7 @@ export class AdminService {
       throw new NotFoundException('Station not found');
     }
 
-    return this.prisma.station.update({
+    const updated = await this.prisma.station.update({
       where: { id },
       data: {
         name: dto.name,
@@ -196,6 +213,8 @@ export class AdminService {
         researchMetadata: dto.researchMetadata as Prisma.InputJsonValue | undefined,
       },
     });
+    await this.invalidateStationCaches(id);
+    return updated;
   }
 
   // ============================================================================
@@ -223,7 +242,7 @@ export class AdminService {
       select: { sortOrder: true },
     });
 
-    return this.prisma.stationImage.create({
+    const image = await this.prisma.stationImage.create({
       data: {
         stationId,
         url: dto.url,
@@ -233,6 +252,8 @@ export class AdminService {
         uploadedBy,
       },
     });
+    await this.invalidateStationCaches(stationId);
+    return image;
   }
 
   // ============================================================================
@@ -261,6 +282,7 @@ export class AdminService {
 
     // Update station port count
     await this.updateStationPortCounts(stationId);
+    await this.invalidateStationCaches(stationId);
 
     return port;
   }
@@ -294,6 +316,7 @@ export class AdminService {
     if (dto.status) {
       await this.updateStationPortCounts(port.stationId);
     }
+    await this.invalidateStationCaches(port.stationId);
 
     return updated;
   }
@@ -314,4 +337,3 @@ export class AdminService {
     });
   }
 }
-

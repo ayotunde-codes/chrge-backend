@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject, ConflictException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma, StationType } from '@prisma/client';
@@ -163,6 +163,7 @@ export class StationsService {
         ) AS distance_km
       FROM stations s
       WHERE s."isActive" = true
+        AND s.status = 'APPROVED'
         AND s."deletedAt" IS NULL
         ${dto.stationType ? Prisma.sql`AND s."stationType" = CAST(${dto.stationType} AS "StationType")` : Prisma.sql``}
         ${
@@ -255,8 +256,10 @@ export class StationsService {
 
   async findTopPicks(lat: number, lng: number, userId?: string, limit = 4): Promise<StationCardResult[]> {
     // Round to 2dp (~1km precision) so nearby users share the same cache entry
-    const cacheKey = `stations:top-picks:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
-    const cached = await this.cache.get<StationCardResult[]>(cacheKey);
+    const cacheVersion = (await this.cache.get<number>('stations:top-picks:version')) ?? 0;
+    const cacheKey = `stations:top-picks:v${cacheVersion}:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
+    // Favorite state is user-specific and must never enter the shared cache.
+    const cached = userId ? undefined : await this.cache.get<StationCardResult[]>(cacheKey);
     if (cached) return cached;
 
     // Fetch stations with scoring heuristic:
@@ -331,6 +334,7 @@ export class StationsService {
         ) AS score
       FROM stations s
       WHERE s."isActive" = true
+        AND s.status = 'APPROVED'
         AND s."deletedAt" IS NULL
         AND (
           6371 * acos(
@@ -378,7 +382,7 @@ export class StationsService {
       );
     });
 
-    await this.cache.set(cacheKey, result, TTL_5_MIN);
+    if (!userId) await this.cache.set(cacheKey, result, TTL_5_MIN);
     return result;
   }
 
@@ -396,6 +400,7 @@ export class StationsService {
     // Build Prisma where clause
     const where: Prisma.StationWhereInput = {
       isActive: true,
+      status: 'APPROVED',
       deletedAt: null,
     };
 
@@ -530,14 +535,14 @@ export class StationsService {
 
   async findById(id: string, userId?: string): Promise<StationDetailResult> {
     const cacheKey = `stations:detail:${id}`;
-    const cached = await this.cache.get<StationDetail>(cacheKey);
+    const cached = await this.cache.get<StationDetailResult>(cacheKey);
 
-    let station: StationDetail;
+    let detail: StationDetailResult;
     if (cached) {
-      station = cached;
+      detail = cached;
     } else {
       const found = await this.prisma.station.findFirst({
-        where: { id, isActive: true, deletedAt: null },
+        where: { id, isActive: true, status: 'APPROVED', deletedAt: null },
         include: {
           network: {
             select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true },
@@ -555,8 +560,11 @@ export class StationsService {
         throw new NotFoundException('Station not found');
       }
 
-      await this.cache.set(cacheKey, found, TTL_5_MIN);
-      station = found;
+      // Cache the JSON-safe public DTO rather than a raw Prisma result containing
+      // Date instances. Redis deserializes dates to strings, which previously made
+      // the second detail request crash in mapToStationDetail().
+      detail = this.mapToStationDetail(found, false);
+      await this.cache.set(cacheKey, detail, TTL_5_MIN);
     }
 
     // Favorite status is user-specific — always check live, not cached
@@ -568,7 +576,7 @@ export class StationsService {
       isFavorite = !!favorite;
     }
 
-    return this.mapToStationDetail(station, isFavorite);
+    return { ...detail, isFavorite };
   }
 
   // ============================================================================
@@ -580,12 +588,13 @@ export class StationsService {
     limit = 10,
     cursor?: string,
   ): Promise<{ reviews: ReviewResult[]; nextCursor: string | null }> {
-    const cacheKey = `stations:reviews:${stationId}:${limit}:${cursor ?? ''}`;
+    const cacheVersion = (await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0;
+    const cacheKey = `stations:reviews:${stationId}:v${cacheVersion}:${limit}:${cursor ?? ''}`;
     const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(cacheKey);
     if (cached) return cached;
 
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -622,7 +631,7 @@ export class StationsService {
   async createReview(userId: string, stationId: string, dto: CreateReviewDto): Promise<Review> {
     // Verify station exists
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -656,15 +665,19 @@ export class StationsService {
       });
     }
 
-    // Fire-and-forget — don't block the response waiting for aggregate recalculation
-    this.updateStationRating(stationId).catch((err) =>
-      this.logger.error(`Failed to update rating for station ${stationId}`, err),
-    );
+    await this.updateStationRating(stationId);
 
     // Invalidate cached reviews and detail for this station
     await Promise.all([
-      this.cache.del(`stations:reviews:${stationId}:10:`),
       this.cache.del(`stations:detail:${stationId}`),
+      this.cache.set(
+        `stations:reviews:${stationId}:version`,
+        ((await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0) + 1,
+      ),
+      this.cache.set(
+        'stations:top-picks:version',
+        ((await this.cache.get<number>('stations:top-picks:version')) ?? 0) + 1,
+      ),
     ]);
 
     return review;
@@ -688,7 +701,7 @@ export class StationsService {
 
   async addFavorite(userId: string, stationId: string): Promise<Favorite> {
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -727,7 +740,7 @@ export class StationsService {
     });
 
     return favorites
-      .filter((f) => f.station.isActive && !f.station.deletedAt)
+      .filter((f) => f.station.isActive && f.station.status === 'APPROVED' && !f.station.deletedAt)
       .map((f) => {
         // Create a compatible object for mapToStationCard
         const stationData: StationWithDistance = {
@@ -783,8 +796,22 @@ export class StationsService {
   // STATION SUBMISSION
   // ============================================================================
 
-  async submitStation(userId: string, dto: SubmitStationDto): Promise<StationDetailResult> {
-    const skipApproval = this.configService.get<string>('SKIP_STATION_APPROVAL') === 'true';
+  async submitStation(
+    userId: string,
+    dto: SubmitStationDto,
+    idempotencyKey?: string,
+  ): Promise<StationDetailResult> {
+    if (idempotencyKey) {
+      const existing = await this.prisma.station.findFirst({
+        where: { submittedBy: userId, submissionKey: idempotencyKey, deletedAt: null },
+        include: {
+          network: { select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true } },
+          ports: { orderBy: { portNumber: 'asc' } },
+          images: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
+      if (existing) return this.mapToStationDetail(existing, false);
+    }
 
     const station = await this.prisma.$transaction(async (tx) => {
       const created = await tx.station.create({
@@ -808,9 +835,11 @@ export class StationsService {
           phoneNumber: dto.phoneNumber,
           networkId: dto.networkId,
           submittedBy: userId,
-          // When SKIP_STATION_APPROVAL is true, go live immediately
-          status: skipApproval ? 'APPROVED' : 'PENDING',
-          isActive: skipApproval,
+          submissionKey: idempotencyKey,
+          // Community submissions always enter moderation. No environment flag
+          // may grant a normal user publication rights.
+          status: 'PENDING',
+          isActive: false,
           isVerified: false,
         },
       });
@@ -852,7 +881,16 @@ export class StationsService {
       return created;
     });
 
-    return this.findById(station.id, userId);
+    const created = await this.prisma.station.findFirst({
+      where: { id: station.id, submittedBy: userId, deletedAt: null },
+      include: {
+        network: { select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true } },
+        ports: { orderBy: { portNumber: 'asc' } },
+        images: { orderBy: { sortOrder: 'asc' } },
+      },
+    });
+    if (!created) throw new ConflictException('Station submission could not be read after creation');
+    return this.mapToStationDetail(created, false);
   }
 
   async getMySubmissions(userId: string): Promise<(StationCardResult & { status: string })[]> {
@@ -919,6 +957,22 @@ export class StationsService {
       const card = this.mapToStationCard(stationData, s.ports, s.images[0]?.url, false, allImageUrls);
       return { ...card, status: (s as unknown as { status: string }).status };
     });
+  }
+
+  async withdrawSubmission(userId: string, stationId: string): Promise<void> {
+    const result = await this.prisma.station.updateMany({
+      where: {
+        id: stationId,
+        submittedBy: userId,
+        status: { in: ['PENDING', 'REJECTED'] },
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException('Withdrawable station submission not found');
+    }
+    await this.cache.del(`stations:detail:${stationId}`);
   }
 
   // ============================================================================
@@ -1210,7 +1264,8 @@ export class StationsService {
       lastStatusUpdate: station.lastStatusUpdate,
       updatedAt: station.updatedAt?.toISOString() ?? null,
       status: (station as unknown as { status?: string }).status ?? 'APPROVED',
-      submittedBy: (station as unknown as { submittedBy?: string | null }).submittedBy ?? null,
+      // Never expose the submitter's user id through a public or owner response.
+      submittedBy: null,
       rejectionReason: (station as unknown as { rejectionReason?: string | null }).rejectionReason ?? null,
     };
   }
