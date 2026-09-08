@@ -45,6 +45,105 @@ export class AdminOperationsService {
     };
   }
 
+  async notifications(userId: string) {
+    const staff = await this.prisma.staffProfile.findUnique({
+      where: { userId },
+      select: { notificationsReadAt: true },
+    });
+    if (!staff) throw new NotFoundException('Staff profile not found');
+
+    const readAt = staff.notificationsReadAt;
+    const cngUnreadWhere = readAt
+      ? {
+          OR: [{ submittedAt: { gt: readAt } }, { submittedAt: null, createdAt: { gt: readAt } }],
+        }
+      : {};
+    const [stations, applications, unreadStations, unreadApplications] = await Promise.all([
+      this.prisma.station.findMany({
+        where: { status: 'PENDING', isActive: false, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+        select: { id: true, name: true, city: true, state: true, createdAt: true },
+      }),
+      this.prisma.cngApplication.findMany({
+        where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } },
+        orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 15,
+        select: { id: true, reference: true, status: true, submittedAt: true, createdAt: true },
+      }),
+      this.prisma.station.count({
+        where: {
+          status: 'PENDING',
+          isActive: false,
+          deletedAt: null,
+          ...(readAt ? { createdAt: { gt: readAt } } : {}),
+        },
+      }),
+      this.prisma.cngApplication.count({
+        where: {
+          status: { in: ['SUBMITTED', 'UNDER_REVIEW'] },
+          ...cngUnreadWhere,
+        },
+      }),
+    ]);
+
+    const items = [
+      ...stations.map((station) => ({
+        id: `station:${station.id}`,
+        type: 'STATION_SUBMISSION' as const,
+        title: 'Station awaiting review',
+        body: `${station.name} · ${station.city}, ${station.state}`,
+        href: `/stations/${station.id}`,
+        occurredAt: station.createdAt,
+        unread: !readAt || station.createdAt > readAt,
+      })),
+      ...applications.map((application) => {
+        const occurredAt = application.submittedAt ?? application.createdAt;
+        return {
+          id: `cng:${application.id}`,
+          type: 'CNG_APPLICATION' as const,
+          title:
+            application.status === 'SUBMITTED'
+              ? 'New financing application'
+              : 'Financing review in progress',
+          body: application.reference,
+          href: `/cng-applications/${application.id}`,
+          occurredAt,
+          unread: !readAt || occurredAt > readAt,
+        };
+      }),
+    ]
+      .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())
+      .slice(0, 20);
+
+    return {
+      items,
+      unreadCount: unreadStations + unreadApplications,
+      readAt,
+      polledAt: new Date(),
+    };
+  }
+
+  async markNotificationsRead(userId: string, context: AuditContext) {
+    const readAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.staffProfile.update({
+        where: { userId },
+        data: { notificationsReadAt: readAt },
+      });
+      await this.audit.create(
+        context,
+        {
+          action: 'staff.notifications_read',
+          targetType: 'staff_profile',
+          targetId: userId,
+        },
+        tx,
+      );
+      return { readAt };
+    });
+  }
+
   vehicleCatalog() {
     return Promise.all([
       this.prisma.vehicleBrand.findMany({

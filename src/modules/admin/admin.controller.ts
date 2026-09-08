@@ -60,6 +60,23 @@ export class AdminController {
     return this.operations.dashboard();
   }
 
+  @Get('notifications')
+  notifications(@CurrentUser() user: JwtPayload) {
+    return this.operations.notifications(user.sub);
+  }
+
+  @Post('notifications/read')
+  @HttpCode(HttpStatus.OK)
+  markNotificationsRead(@CurrentUser() user: JwtPayload, @Req() request: Request) {
+    return this.operations.markNotificationsRead(user.sub, {
+      actorId: user.sub,
+      actorRole: user.role === 'OPERATOR' ? 'OPERATOR' : 'ADMIN',
+      requestId: request.get('x-request-id') ?? randomUUID(),
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent'),
+    });
+  }
+
   @Get('vehicles')
   vehicles() {
     return this.operations.vehicleCatalog();

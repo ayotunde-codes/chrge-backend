@@ -174,19 +174,20 @@ model RefreshToken {
 }
 
 model StaffProfile {
-  id                 String      @id @default(uuid())
-  userId             String      @unique
-  status             StaffStatus @default(INVITED)
-  staffRoleId        String
-  mfaSecretEncrypted String?
-  mfaEnabledAt       DateTime?
-  recoveryCodesHash  Json?
-  invitedAt          DateTime?
-  activatedAt        DateTime?
-  suspendedAt        DateTime?
-  disabledAt         DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                  String      @id @default(uuid())
+  userId              String      @unique
+  status              StaffStatus @default(INVITED)
+  staffRoleId         String
+  mfaSecretEncrypted  String?
+  mfaEnabledAt        DateTime?
+  recoveryCodesHash   Json?
+  notificationsReadAt DateTime?
+  invitedAt           DateTime?
+  activatedAt         DateTime?
+  suspendedAt         DateTime?
+  disabledAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role StaffRole @relation(fields: [staffRoleId], references: [id])
