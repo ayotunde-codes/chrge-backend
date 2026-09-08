@@ -1,8 +1,10 @@
 import {
+  BadGatewayException,
   ConflictException,
   GoneException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,6 +21,7 @@ import {
   staffOtpAuthUri,
   verifyStaffTotp,
 } from './staff-mfa';
+import { ResendEmailService } from './resend-email.service';
 
 const INVITATION_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
@@ -28,6 +31,7 @@ export class StaffInvitationsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly email: ResendEmailService,
   ) {}
 
   private tokenHash(token: string): string {
@@ -69,6 +73,9 @@ export class StaffInvitationsService {
 
   async create(dto: CreateStaffInvitationDto, context: AuditContext) {
     const email = dto.email.toLowerCase();
+    if (!this.email.isConfigured() && this.config.get<string>('CHRGE_ENV') !== 'staging') {
+      throw new ServiceUnavailableException('Transactional email is not configured');
+    }
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('That email already belongs to an account');
     }
@@ -104,11 +111,59 @@ export class StaffInvitationsService {
       );
       return created;
     });
+    if (this.email.isConfigured()) {
+      const adminPortalUrl = this.config.getOrThrow<string>('ADMIN_PORTAL_URL');
+      const inviteUrl = new URL(`/staff/invite/${token}`, adminPortalUrl).toString();
+      try {
+        const delivery = await this.email.sendStaffInvitation({
+          to: email,
+          role: role.name,
+          inviteUrl,
+          expiresAt: invitation.expiresAt,
+          invitationId: invitation.id,
+        });
+        await this.audit.create(context, {
+          action: 'staff.invitation_emailed',
+          targetType: 'staff_invitation',
+          targetId: invitation.id,
+          sensitivity: 'SENSITIVE',
+          metadata: { provider: 'resend', messageId: delivery.messageId },
+        });
+        return {
+          id: invitation.id,
+          email,
+          role: dto.role,
+          expiresAt: invitation.expiresAt,
+          delivery: 'EMAIL' as const,
+        };
+      } catch {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.staffInvitation.update({
+            where: { id: invitation.id },
+            data: { revokedAt: new Date() },
+          });
+          await this.audit.create(
+            context,
+            {
+              action: 'staff.invitation_delivery_failed',
+              targetType: 'staff_invitation',
+              targetId: invitation.id,
+              sensitivity: 'SENSITIVE',
+              metadata: { provider: 'resend' },
+            },
+            tx,
+          );
+        });
+        throw new BadGatewayException('Invitation email could not be delivered. Please try again.');
+      }
+    }
+
     return {
       id: invitation.id,
       email,
       role: dto.role,
       expiresAt: invitation.expiresAt,
+      delivery: 'MANUAL_STAGING_FALLBACK' as const,
       invitePath: `/staff/invite/${token}`,
     };
   }

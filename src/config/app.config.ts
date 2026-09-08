@@ -47,6 +47,18 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  ADMIN_PORTAL_URL: string = 'http://localhost:3000';
+
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  RESEND_FROM_EMAIL: string;
+
+  @IsString()
+  @IsOptional()
   REDIS_URL: string = 'redis://localhost:6379';
 
   @IsString()

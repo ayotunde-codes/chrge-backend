@@ -19,6 +19,7 @@ import {
   StaffInvitationsController,
 } from './staff-invitations.controller';
 import { StaffInvitationsService } from './staff-invitations.service';
+import { ResendEmailService } from './resend-email.service';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -61,6 +62,7 @@ import { UsersModule } from '../users/users.module';
     StaffAccessGuard,
     RolesGuard,
     StaffInvitationsService,
+    ResendEmailService,
   ],
   exports: [AuthService, JwtAuthGuard],
 })
