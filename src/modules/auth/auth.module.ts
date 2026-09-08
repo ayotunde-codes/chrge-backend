@@ -13,6 +13,12 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { StaffAuthController } from './staff-auth.controller';
 import { StaffAuthService } from './staff-auth.service';
 import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import {
+  StaffInvitationEnrollmentController,
+  StaffInvitationsController,
+} from './staff-invitations.controller';
+import { StaffInvitationsService } from './staff-invitations.service';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -39,7 +45,12 @@ import { UsersModule } from '../users/users.module';
       },
     ]),
   ],
-  controllers: [AuthController, StaffAuthController],
+  controllers: [
+    AuthController,
+    StaffAuthController,
+    StaffInvitationsController,
+    StaffInvitationEnrollmentController,
+  ],
   providers: [
     AuthService,
     StaffAuthService,
@@ -48,6 +59,8 @@ import { UsersModule } from '../users/users.module';
     JwtStrategy,
     JwtAuthGuard,
     StaffAccessGuard,
+    RolesGuard,
+    StaffInvitationsService,
   ],
   exports: [AuthService, JwtAuthGuard],
 })

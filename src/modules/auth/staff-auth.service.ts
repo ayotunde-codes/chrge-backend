@@ -1,11 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createDecipheriv, createHash, createHmac, timingSafeEqual } from 'crypto';
+import { createHash } from 'crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from './token.service';
 import { StaffLoginDto, StaffMfaDto } from './dto/staff-auth.dto';
+import { decryptStaffMfaSecret, verifyStaffTotp } from './staff-mfa';
 
 interface Meta {
   userAgent?: string;
@@ -91,7 +92,7 @@ export class StaffAuthService {
       where: { id: challenge.id },
       data: { attempts: { increment: 1 } },
     });
-    if (!this.verifyTotp(this.decrypt(staff.mfaSecretEncrypted), dto.code)) {
+    if (!verifyStaffTotp(decryptStaffMfaSecret(this.config, staff.mfaSecretEncrypted), dto.code)) {
       await this.audit.create(
         {
           actorId: challenge.userId,
@@ -173,38 +174,5 @@ export class StaffAuthService {
       },
     );
     return { message: sessionId ? 'Session revoked' : 'All staff sessions revoked' };
-  }
-
-  private decrypt(value: string): string {
-    const key = Buffer.from(this.config.getOrThrow<string>('ADMIN_MFA_ENCRYPTION_KEY'), 'base64');
-    if (key.length !== 32) throw new Error('ADMIN_MFA_ENCRYPTION_KEY must decode to 32 bytes');
-    const [ivText, tagText, cipherText] = value.split('.');
-    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(cipherText, 'base64url')),
-      decipher.final(),
-    ]).toString('utf8');
-  }
-  private verifyTotp(base32: string, code: string): boolean {
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let bits = '';
-    for (const char of base32.replace(/=|\s/g, '').toUpperCase()) {
-      const i = alphabet.indexOf(char);
-      if (i < 0) return false;
-      bits += i.toString(2).padStart(5, '0');
-    }
-    const secret = Buffer.from((bits.match(/.{8}/g) ?? []).map((byte) => parseInt(byte, 2)));
-    const supplied = Buffer.from(code.padStart(6, '0'));
-    return [-1, 0, 1].some((offset) => {
-      const counter = Math.floor(Date.now() / 30000) + offset;
-      const b = Buffer.alloc(8);
-      b.writeBigUInt64BE(BigInt(counter));
-      const h = createHmac('sha1', secret).update(b).digest();
-      const p = h[h.length - 1] & 15;
-      const n = (((h[p] & 127) << 24) | (h[p + 1] << 16) | (h[p + 2] << 8) | h[p + 3]) % 1_000_000;
-      const expected = Buffer.from(String(n).padStart(6, '0'));
-      return supplied.length === expected.length && timingSafeEqual(supplied, expected);
-    });
   }
 }
