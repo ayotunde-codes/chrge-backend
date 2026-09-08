@@ -15,6 +15,7 @@ import { StaffAuthService } from './staff-auth.service';
 import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
+  StaffAccountsController,
   StaffInvitationEnrollmentController,
   StaffInvitationsController,
 } from './staff-invitations.controller';
@@ -49,6 +50,7 @@ import { UsersModule } from '../users/users.module';
   controllers: [
     AuthController,
     StaffAuthController,
+    StaffAccountsController,
     StaffInvitationsController,
     StaffInvitationEnrollmentController,
   ],

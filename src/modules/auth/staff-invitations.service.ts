@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   Injectable,
   NotFoundException,
@@ -187,6 +188,51 @@ export class StaffInvitationsService {
       });
     }
     return { revoked: true };
+  }
+
+  async disableAccount(userId: string, context: AuditContext) {
+    if (context.actorId === userId) {
+      throw new ForbiddenException('You cannot disable your own staff account');
+    }
+    const profile = await this.prisma.staffProfile.findUnique({
+      where: { userId },
+      include: { role: { select: { id: true, name: true, isTopLevel: true } } },
+    });
+    if (!profile) throw new NotFoundException('Staff account not found');
+    if (profile.role.isTopLevel) {
+      throw new ForbiddenException('The super administrator account cannot be disabled here');
+    }
+    if (profile.status === 'DISABLED') return { disabled: true };
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.staffProfile.update({
+        where: { userId },
+        data: {
+          status: 'DISABLED',
+          disabledAt: now,
+          mfaSecretEncrypted: null,
+          mfaEnabledAt: null,
+        },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, audience: 'chrge-admin', revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await this.audit.create(
+        context,
+        {
+          action: 'staff.account_disabled',
+          targetType: 'staff_profile',
+          targetId: userId,
+          sensitivity: 'RESTRICTED',
+          beforeSummary: { status: profile.status, role: profile.role.id },
+          afterSummary: { status: 'DISABLED', sessionsRevoked: true, mfaSecretCleared: true },
+        },
+        tx,
+      );
+    });
+    return { disabled: true };
   }
 
   async inspect(token: string) {

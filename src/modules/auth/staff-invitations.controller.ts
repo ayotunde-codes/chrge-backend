@@ -77,6 +77,28 @@ export class StaffInvitationsController {
   }
 }
 
+@Controller('admin/staff/accounts')
+@UseGuards(JwtAuthGuard, StaffAccessGuard, RolesGuard)
+@Roles('SUPER_ADMIN')
+export class StaffAccountsController {
+  constructor(private readonly invitations: StaffInvitationsService) {}
+
+  @Delete(':userId')
+  @HttpCode(HttpStatus.OK)
+  disable(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Ip() ip: string,
+  ) {
+    return this.invitations.disableAccount(userId, {
+      ...requestMeta(request, ip),
+      actorId: user.sub,
+      actorRole: 'ADMIN',
+    });
+  }
+}
+
 @Controller('admin/auth/invitations')
 export class StaffInvitationEnrollmentController {
   constructor(private readonly invitations: StaffInvitationsService) {}
