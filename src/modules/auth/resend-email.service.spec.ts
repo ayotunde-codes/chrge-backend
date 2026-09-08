@@ -4,7 +4,8 @@ import { ResendEmailService } from './resend-email.service';
 describe('ResendEmailService', () => {
   const values: Record<string, string> = {
     RESEND_API_KEY: 're_test_key',
-    RESEND_FROM_EMAIL: 'operations@gochrge.com',
+    RESEND_FROM_EMAIL: 'team@gochrge.com',
+    CHRGE_ENV: 'staging',
   };
   const config = { get: (name: string) => values[name] } as ConfigService;
   const payload = {
@@ -30,10 +31,15 @@ describe('ResendEmailService', () => {
       'idempotency-key': 'staff-invitation/invite-id',
     });
     expect(request).toMatchObject({
+      from: 'CHRGE Staging <team@gochrge.com>',
       to: [payload.to],
-      subject: 'Your CHRGE staff invitation',
-      tags: [{ name: 'purpose', value: 'staff_invitation' }],
+      subject: '[STAGING] Your CHRGE staff invitation',
+      tags: [
+        { name: 'purpose', value: 'staff_invitation' },
+        { name: 'environment', value: 'staging' },
+      ],
     });
+    expect(request.html).toContain('STAGING ENVIRONMENT');
   });
 
   it('fails closed when credentials are absent', async () => {
