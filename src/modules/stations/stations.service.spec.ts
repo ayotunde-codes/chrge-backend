@@ -15,6 +15,7 @@ describe('StationsService', () => {
   const mockPrismaService = {
     station: {
       findFirst: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -79,7 +80,6 @@ describe('StationsService', () => {
     isActive: true,
     status: 'APPROVED',
     isVerified: true,
-    status: 'APPROVED',
     operatingHours: { mon: { open: '08:00', close: '22:00' } },
     amenities: ['wifi', 'restrooms'],
     pricing: { perKwh: 350, currency: 'NGN' },
@@ -317,14 +317,22 @@ describe('StationsService', () => {
       const stationWithRelations = {
         ...mockStation,
         network: mockNetwork,
-        ports: [{ ...mockPort, status: PortStatus.IN_USE, estimatedAvailableAt: new Date(Date.now() + 60_000) }],
+        ports: [
+          {
+            ...mockPort,
+            status: PortStatus.IN_USE,
+            estimatedAvailableAt: new Date(Date.now() + 60_000),
+          },
+        ],
         images: [mockImage],
       };
       mockCacheManager.get.mockResolvedValueOnce(undefined);
       mockPrismaService.station.findFirst.mockResolvedValue(stationWithRelations);
 
       const first = await service.findById('station-123');
-      const cachedDto = mockCacheManager.set.mock.calls.find(([key]) => key === 'stations:detail:station-123')?.[1];
+      const cachedDto = mockCacheManager.set.mock.calls.find(
+        ([key]) => key === 'stations:detail:station-123',
+      )?.[1];
       mockCacheManager.get.mockResolvedValueOnce(JSON.parse(JSON.stringify(cachedDto)));
       const second = await service.findById('station-123');
 
@@ -678,6 +686,7 @@ describe('StationsService', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(pending);
       mockPrismaService.station.create.mockResolvedValue(pending);
+      mockPrismaService.station.findUniqueOrThrow.mockResolvedValue(pending);
       mockPrismaService.$transaction.mockImplementation((callback) => callback(mockPrismaService));
 
       const result = await service.submitStation(

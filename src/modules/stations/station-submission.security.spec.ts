@@ -80,7 +80,7 @@ describe('community station publication boundary', () => {
       port: { createMany: jest.fn() },
     };
     const prisma = {
-      station: { findUnique: jest.fn().mockResolvedValue(null) },
+      station: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const result = await makeService(prisma).submitStation('owner-1', dto, 'retry-key');
@@ -88,7 +88,7 @@ describe('community station publication boundary', () => {
     expect(tx.station.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         submittedBy: 'owner-1',
-        submissionKey: 'owner-1:retry-key',
+        submissionKey: 'retry-key',
         status: 'PENDING',
         isActive: false,
         isVerified: false,
@@ -99,7 +99,7 @@ describe('community station publication boundary', () => {
 
   it('returns the same submission for an idempotent retry without inserting again', async () => {
     const prisma = {
-      station: { findUnique: jest.fn().mockResolvedValue(baseStation) },
+      station: { findFirst: jest.fn().mockResolvedValue(baseStation) },
       $transaction: jest.fn(),
     };
     const result = await makeService(prisma).submitStation('owner-1', dto, 'retry-key');

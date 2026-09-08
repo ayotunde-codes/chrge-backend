@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import {
@@ -600,9 +593,12 @@ export class StationsService {
     limit = 10,
     cursor?: string,
   ): Promise<{ reviews: ReviewResult[]; nextCursor: string | null }> {
-    const cacheVersion = (await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0;
+    const cacheVersion =
+      (await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0;
     const cacheKey = `stations:reviews:${stationId}:v${cacheVersion}:${limit}:${cursor ?? ''}`;
-    const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(cacheKey);
+    const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(
+      cacheKey,
+    );
     if (cached) return cached;
 
     const station = await this.prisma.station.findFirst({
@@ -1393,7 +1389,8 @@ export class StationsService {
       status: (station as unknown as { status?: string }).status ?? 'APPROVED',
       // Never expose the submitter's user id through a public or owner response.
       submittedBy: null,
-      rejectionReason: (station as unknown as { rejectionReason?: string | null }).rejectionReason ?? null,
+      rejectionReason:
+        (station as unknown as { rejectionReason?: string | null }).rejectionReason ?? null,
     };
   }
 

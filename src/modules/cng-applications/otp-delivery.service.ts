@@ -71,7 +71,8 @@ export class OtpDeliveryService {
         signal: AbortSignal.timeout(5_000),
       });
     } catch (error) {
-      const reason = error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'network';
+      const reason =
+        error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'network';
       this.logger.error(
         `CNG OTP delivery failed requestId=${requestId} reason=${reason} durationMs=${Date.now() - startedAt}`,
       );

@@ -31,7 +31,11 @@ function setup(updateCount = 1) {
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
   };
   const audit = { create: jest.fn() };
-  const cache = { del: jest.fn() };
+  const cache = {
+    get: jest.fn().mockResolvedValue(0),
+    set: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     service: new AdminService(prisma as never, audit as never, cache as never),
     prisma,
