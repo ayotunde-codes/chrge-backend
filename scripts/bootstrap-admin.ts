@@ -27,6 +27,11 @@ async function main() {
   if (!Array.isArray(recoveryCodes) || recoveryCodes.length < 8)
     throw new Error('At least eight one-time recovery codes are required');
 
+  // Argon2 is intentionally expensive and can exceed Prisma's interactive
+  // transaction timeout on small staging containers. Compute it before opening
+  // the transaction so the database write remains short and atomic.
+  const passwordHash = await argon2.hash(password);
+
   const existingTopLevel = await prisma.staffProfile.findFirst({
     where: { role: { isTopLevel: true } },
   });
@@ -73,7 +78,7 @@ async function main() {
     const user = await tx.user.create({
       data: {
         email,
-        passwordHash: await argon2.hash(password),
+        passwordHash,
         emailVerified: true,
         accountType: 'STAFF',
         role: 'ADMIN',
