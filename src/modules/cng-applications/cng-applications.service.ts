@@ -6,7 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CngApplicationDocument, CngApplicationStatus, Prisma } from '@prisma/client';
+import {
+  CngApplicationDocument,
+  CngApplicationStatus,
+  DocumentScanStatus,
+  Prisma,
+} from '@prisma/client';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import { basename } from 'path';
 import { Readable } from 'stream';
@@ -358,6 +363,15 @@ export class CngApplicationsService {
       where: { applicationId_type: { applicationId: id, type } },
     });
     const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const signatureClearedForStaging =
+      process.env.CHRGE_ENV === 'staging' &&
+      process.env.CNG_DOCUMENT_SCAN_MODE === 'signature-only';
+    const scanStatus = signatureClearedForStaging
+      ? DocumentScanStatus.CLEAN
+      : DocumentScanStatus.PENDING;
+    const scanMetadata = signatureClearedForStaging
+      ? { scanStatus, scannedAt: new Date(), scannerVersion: 'signature-only-v1' }
+      : { scanStatus, scannedAt: null, scannerVersion: null };
     await this.documentStorage.putObject(storageKey, file.buffer, file.mimetype);
 
     let document: CngApplicationDocument;
@@ -372,6 +386,7 @@ export class CngApplicationsService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           checksumSha256,
+          ...scanMetadata,
         },
         update: {
           originalName: basename(file.originalname),
@@ -380,6 +395,7 @@ export class CngApplicationsService {
           sizeBytes: file.size,
           checksumSha256,
           uploadedAt: new Date(),
+          ...scanMetadata,
         },
       });
     } catch (error) {
@@ -663,6 +679,7 @@ export class CngApplicationsService {
       mimeType: document.mimeType,
       sizeBytes: document.sizeBytes,
       required: config?.required ?? false,
+      scanStatus: document.scanStatus,
       uploadedAt: document.uploadedAt,
     };
   }

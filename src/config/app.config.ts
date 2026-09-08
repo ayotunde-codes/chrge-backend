@@ -103,6 +103,38 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CNG_OTP_TEST_RECIPIENTS: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_APPLICATIONS_ENABLED: string = 'false';
+
+  @IsString()
+  @IsOptional()
+  CHRGE_ENV: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_DOCUMENT_SCAN_MODE: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_BASE_URL: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_SENDER_ID: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_CHANNEL: string;
+
+  @IsString()
+  @IsOptional()
   ENABLE_SWAGGER: string = 'false';
 
   @IsString()
@@ -174,6 +206,29 @@ export function validateEnv(config: Record<string, unknown>) {
     if (origins.length === 0 || origins.some((origin) => !origin.startsWith('https://'))) {
       throw new Error('Production CORS_ORIGINS must contain only HTTPS origins');
     }
+
+    if (
+      validatedConfig.CNG_APPLICATIONS_ENABLED === 'true' &&
+      validatedConfig.CNG_OTP_DELIVERY_ENABLED !== 'true'
+    ) {
+      throw new Error('Enabled CNG applications require explicit OTP delivery enablement');
+    }
+
+    if (
+      validatedConfig.CNG_APPLICATIONS_ENABLED === 'true' &&
+      !validatedConfig.CNG_OTP_WEBHOOK_URL &&
+      !(validatedConfig.TERMII_BASE_URL && validatedConfig.TERMII_API_KEY) &&
+      !(validatedConfig.CHRGE_ENV === 'staging' && validatedConfig.CNG_OTP_TEST_RECIPIENTS?.trim())
+    ) {
+      throw new Error('Enabled CNG applications require an OTP delivery provider');
+    }
+
+    if (
+      validatedConfig.CNG_DOCUMENT_SCAN_MODE === 'signature-only' &&
+      validatedConfig.CHRGE_ENV !== 'staging'
+    ) {
+      throw new Error('Signature-only document clearance is restricted to staging');
+    }
   }
 
   return validatedConfig;
@@ -209,12 +264,22 @@ export const appConfig = () => ({
     authLimit: parseInt(process.env.AUTH_THROTTLE_LIMIT || '10', 10),
   },
   cngApplications: {
+    enabled: process.env.CNG_APPLICATIONS_ENABLED === 'true',
     encryptionKey: process.env.CNG_APPLICATION_ENCRYPTION_KEY,
     documentStoragePath:
       process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
     otpWebhookUrl: process.env.CNG_OTP_WEBHOOK_URL,
     otpWebhookToken: process.env.CNG_OTP_WEBHOOK_TOKEN,
     otpDeliveryEnabled: process.env.CNG_OTP_DELIVERY_ENABLED === 'true',
+    otpTestRecipients: process.env.CNG_OTP_TEST_RECIPIENTS,
+    documentScanMode: process.env.CNG_DOCUMENT_SCAN_MODE,
+  },
+  environment: process.env.CHRGE_ENV,
+  termii: {
+    baseUrl: process.env.TERMII_BASE_URL,
+    apiKey: process.env.TERMII_API_KEY,
+    senderId: process.env.TERMII_SENDER_ID || 'CHRGE',
+    channel: process.env.TERMII_CHANNEL || 'dnd',
   },
   swagger: {
     enabled: process.env.ENABLE_SWAGGER === 'true',

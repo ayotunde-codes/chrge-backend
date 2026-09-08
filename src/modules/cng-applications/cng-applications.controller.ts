@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Res,
+  ServiceUnavailableException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -28,6 +29,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
@@ -50,7 +52,16 @@ const APPLICATION_ACCESS_GUARDS = [JwtAuthGuard, CngApplicationAccessGuard];
 @ApiTags('cng-applications')
 @Controller('cng/applications')
 export class CngApplicationsController {
-  constructor(private readonly cngApplicationsService: CngApplicationsService) {}
+  constructor(
+    private readonly cngApplicationsService: CngApplicationsService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private assertApplicationsEnabled(): void {
+    if (this.configService.get<string>('CNG_APPLICATIONS_ENABLED') !== 'true') {
+      throw new ServiceUnavailableException('CNG financing applications are temporarily closed');
+    }
+  }
 
   @Get('configuration')
   @ApiOperation({ summary: 'Get CNG packages, financing plans, and document rules' })
@@ -64,6 +75,7 @@ export class CngApplicationsController {
   @ApiOperation({ summary: 'Create a CNG financing application draft' })
   @ApiResponse({ status: 201, type: CngApplicationResponseDto })
   async createApplication(@CurrentUser() user: JwtPayload): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.createApplication(user.sub);
   }
 
@@ -94,6 +106,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SavePersonalDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.savePersonalDetails(id, dto);
   }
 
@@ -108,6 +121,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RequestPhoneVerificationDto,
   ): Promise<{ phone: string; expiresAt: Date; developmentCode?: string }> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.requestPhoneVerification(id, dto);
   }
 
@@ -121,6 +135,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VerifyPhoneDto,
   ): Promise<{ verified: true }> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.verifyPhone(id, dto);
   }
 
@@ -133,6 +148,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SaveVehicleDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.saveVehicleDetails(id, dto);
   }
 
@@ -145,6 +161,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SaveFinancingDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.saveFinancingDetails(id, dto);
   }
 
@@ -186,6 +203,7 @@ export class CngApplicationsController {
     @Param('type') type: string,
     @UploadedFile() file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     if (!file) throw new BadRequestException('No document file provided');
     const extensionByMime: Record<string, string> = {
       'image/jpeg': '.jpg',
@@ -205,6 +223,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('type') type: string,
   ): Promise<void> {
+    this.assertApplicationsEnabled();
     await this.cngApplicationsService.deleteDocument(id, type);
   }
 
@@ -240,6 +259,7 @@ export class CngApplicationsController {
   async submitApplication(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.submitApplication(id);
   }
 
