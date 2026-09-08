@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from './token.service';
 import { StaffLoginDto, StaffMfaDto } from './dto/staff-auth.dto';
-import { decryptStaffMfaSecret, verifyStaffTotp } from './staff-mfa';
+import { decryptStaffMfaSecret, staffRecoveryCodeHash, verifyStaffTotp } from './staff-mfa';
 
 interface Meta {
   userAgent?: string;
@@ -92,7 +92,15 @@ export class StaffAuthService {
       where: { id: challenge.id },
       data: { attempts: { increment: 1 } },
     });
-    if (!verifyStaffTotp(decryptStaffMfaSecret(this.config, staff.mfaSecretEncrypted), dto.code)) {
+    const totpValid =
+      /^\d{6}$/.test(dto.code) &&
+      verifyStaffTotp(decryptStaffMfaSecret(this.config, staff.mfaSecretEncrypted), dto.code);
+    const recoveryHashes = Array.isArray(staff.recoveryCodesHash)
+      ? staff.recoveryCodesHash.filter((value): value is string => typeof value === 'string')
+      : [];
+    const recoveryHash = staffRecoveryCodeHash(this.config, dto.code);
+    const recoveryIndex = recoveryHashes.indexOf(recoveryHash);
+    if (!totpValid && recoveryIndex < 0) {
       await this.audit.create(
         {
           actorId: challenge.userId,
@@ -104,6 +112,12 @@ export class StaffAuthService {
         { action: 'staff.mfa_denied', targetType: 'staff_session', sensitivity: 'SENSITIVE' },
       );
       throw new UnauthorizedException('Invalid or expired verification challenge');
+    }
+    if (recoveryIndex >= 0) {
+      await this.prisma.staffProfile.update({
+        where: { userId: challenge.userId },
+        data: { recoveryCodesHash: recoveryHashes.filter((_, index) => index !== recoveryIndex) },
+      });
     }
     await this.prisma.staffAuthChallenge.update({
       where: { id: challenge.id },
@@ -125,7 +139,11 @@ export class StaffAuthService {
         action: 'staff.login_succeeded',
         targetType: 'staff_session',
         sensitivity: 'SENSITIVE',
-        afterSummary: { role: staff.role.id, mfa: true },
+        afterSummary: {
+          role: staff.role.id,
+          mfa: true,
+          verificationMethod: recoveryIndex >= 0 ? 'recovery_code' : 'totp',
+        },
       },
     );
     return {

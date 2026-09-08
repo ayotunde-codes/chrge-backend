@@ -80,13 +80,17 @@ export function generateRecoveryCodes(config: ConfigService): {
   plain: string[];
   hashes: string[];
 } {
-  const pepper = config.getOrThrow<string>('RECOVERY_CODE_PEPPER');
   const plain = Array.from(
     { length: 10 },
     () => `${randomBytes(4).toString('hex')}-${randomBytes(4).toString('hex')}`,
   );
   return {
     plain,
-    hashes: plain.map((code) => createHash('sha256').update(`${pepper}:${code}`).digest('hex')),
+    hashes: plain.map((code) => staffRecoveryCodeHash(config, code)),
   };
+}
+
+export function staffRecoveryCodeHash(config: ConfigService, code: string): string {
+  const pepper = config.getOrThrow<string>('RECOVERY_CODE_PEPPER');
+  return createHash('sha256').update(`${pepper}:${code.trim().toLowerCase()}`).digest('hex');
 }

@@ -4,6 +4,7 @@ import {
   encryptStaffMfaSecret,
   generateRecoveryCodes,
   generateStaffMfaSecret,
+  staffRecoveryCodeHash,
   staffOtpAuthUri,
   verifyStaffTotp,
 } from './staff-mfa';
@@ -36,5 +37,6 @@ describe('staff MFA helpers', () => {
     expect(recovery.plain).toHaveLength(10);
     expect(recovery.hashes).toHaveLength(10);
     expect(recovery.hashes[0]).not.toContain(recovery.plain[0]);
+    expect(staffRecoveryCodeHash(config, recovery.plain[0].toUpperCase())).toBe(recovery.hashes[0]);
   });
 });
