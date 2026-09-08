@@ -10,6 +10,7 @@ import { StaffLoginDto, StaffMfaDto } from './dto/staff-auth.dto';
 interface Meta {
   userAgent?: string;
   ip?: string;
+  challengeBinding?: string;
   requestId: string;
 }
 @Injectable()
@@ -24,7 +25,7 @@ export class StaffAuthService {
   ) {}
   private binding(meta: Meta) {
     return createHash('sha256')
-      .update(`${meta.ip ?? ''}|${meta.userAgent ?? ''}`)
+      .update(`${meta.challengeBinding ?? meta.ip ?? ''}|${meta.userAgent ?? ''}`)
       .digest('hex');
   }
 

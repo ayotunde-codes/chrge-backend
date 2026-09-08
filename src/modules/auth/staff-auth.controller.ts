@@ -31,6 +31,7 @@ export class StaffAuthController {
     return {
       ip,
       userAgent: request.get('user-agent'),
+      challengeBinding: request.get('x-chrge-client-binding'),
       requestId: request.get('x-request-id') ?? randomUUID(),
     };
   }
