@@ -235,6 +235,55 @@ export class StaffInvitationsService {
     return { disabled: true };
   }
 
+  async deleteStagingAccount(userId: string, context: AuditContext) {
+    if (this.config.get<string>('CHRGE_ENV') !== 'staging') {
+      throw new ForbiddenException('Permanent staff deletion is available only in staging');
+    }
+    if (context.actorId === userId) {
+      throw new ForbiddenException('You cannot delete your own staff account');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { staffProfile: { include: { role: true } } },
+    });
+    if (!user?.staffProfile) throw new NotFoundException('Staff account not found');
+    if (user.staffProfile.role.isTopLevel) {
+      throw new ForbiddenException('The super administrator account cannot be deleted here');
+    }
+    if (user.staffProfile.status !== 'DISABLED') {
+      throw new ConflictException('Disable this staff account before permanently deleting it');
+    }
+    const authoredInvitations = await this.prisma.staffInvitation.count({
+      where: { invitedBy: userId },
+    });
+    if (authoredInvitations > 0) {
+      throw new ConflictException(
+        'This staff account has invitation history and cannot be deleted',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.audit.create(
+        context,
+        {
+          action: 'staff.test_account_deleted',
+          targetType: 'staff_profile',
+          targetId: userId,
+          sensitivity: 'RESTRICTED',
+          beforeSummary: {
+            status: user.staffProfile!.status,
+            role: user.staffProfile!.role.id,
+          },
+          afterSummary: { deleted: true, invitationHistoryRemoved: true },
+        },
+        tx,
+      );
+      await tx.staffInvitation.deleteMany({ where: { email: user.email } });
+      await tx.user.delete({ where: { id: userId } });
+    });
+    return { deleted: true };
+  }
+
   async inspect(token: string) {
     const invitation = await this.validInvitation(token);
     return {

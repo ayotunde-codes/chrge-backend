@@ -83,6 +83,21 @@ export class StaffInvitationsController {
 export class StaffAccountsController {
   constructor(private readonly invitations: StaffInvitationsService) {}
 
+  @Delete(':userId/permanent')
+  @HttpCode(HttpStatus.OK)
+  deleteStagingAccount(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Ip() ip: string,
+  ) {
+    return this.invitations.deleteStagingAccount(userId, {
+      ...requestMeta(request, ip),
+      actorId: user.sub,
+      actorRole: 'ADMIN',
+    });
+  }
+
   @Delete(':userId')
   @HttpCode(HttpStatus.OK)
   disable(

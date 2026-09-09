@@ -47,6 +47,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  RECOVERY_CODE_PEPPER: string;
+
+  @IsString()
+  @IsOptional()
   ADMIN_PORTAL_URL: string = 'http://localhost:3000';
 
   @IsString()
@@ -188,6 +192,7 @@ export function validateEnv(config: Record<string, unknown>) {
       'R2_SECRET_ACCESS_KEY',
       'R2_BUCKET',
       'ADMIN_MFA_ENCRYPTION_KEY',
+      'RECOVERY_CODE_PEPPER',
     ];
     const missing = requiredProductionValues.filter(
       (name) => !String(validatedConfig[name] ?? '').trim(),
@@ -200,6 +205,7 @@ export function validateEnv(config: Record<string, unknown>) {
     const secretValues = [
       ['JWT_SECRET', validatedConfig.JWT_SECRET],
       ['REFRESH_TOKEN_PEPPER', validatedConfig.REFRESH_TOKEN_PEPPER],
+      ['RECOVERY_CODE_PEPPER', validatedConfig.RECOVERY_CODE_PEPPER],
       ['CNG_APPLICATION_ENCRYPTION_KEY', validatedConfig.CNG_APPLICATION_ENCRYPTION_KEY],
     ] as const;
     const weakSecrets = secretValues
