@@ -233,6 +233,20 @@ export class TokenService {
     });
   }
 
+  async revokeAdminRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    const tokenHash = hashRefreshToken(refreshToken, this.refreshTokenPepper);
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        tokenHash,
+        userId,
+        audience: 'chrge-admin',
+        environment: this.configService.get<string>('NODE_ENV', 'development'),
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   /**
    * Revoke a specific refresh token
    */

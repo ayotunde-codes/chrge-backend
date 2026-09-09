@@ -17,7 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { randomUUID } from 'crypto';
 import { Public } from '../../common/decorators/public.decorator';
-import { StaffLoginDto, StaffMfaDto } from './dto/staff-auth.dto';
+import { StaffLoginDto, StaffLogoutDto, StaffMfaDto } from './dto/staff-auth.dto';
 import { StaffAuthService } from './staff-auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
@@ -61,6 +61,19 @@ export class StaffAuthController {
   @HttpCode(HttpStatus.OK)
   refresh(@Body('refreshToken') refreshToken: string, @Req() request: Request, @Ip() ip: string) {
     return this.staffAuth.refresh(refreshToken, this.meta(request, ip));
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard, StaffAccessGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke the current staff refresh session' })
+  logout(
+    @Body() dto: StaffLogoutDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Ip() ip: string,
+  ) {
+    return this.staffAuth.logout(user.sub, dto.refreshToken, this.meta(request, ip));
   }
 
   @Get('sessions')

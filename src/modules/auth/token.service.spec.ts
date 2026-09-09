@@ -223,6 +223,29 @@ describe('TokenService', () => {
     });
   });
 
+  describe('revokeAdminRefreshToken', () => {
+    it('should revoke only the matching staff refresh session', async () => {
+      mockPrismaService.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.revokeAdminRefreshToken('staff-123', 'staff-refresh-token');
+
+      expect(hashUtil.hashRefreshToken).toHaveBeenCalledWith(
+        'staff-refresh-token',
+        'pepper-secret',
+      );
+      expect(mockPrismaService.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          tokenHash: 'hashed-token',
+          userId: 'staff-123',
+          audience: 'chrge-admin',
+          environment: 'development',
+          revokedAt: null,
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+  });
+
   describe('revokeAllUserTokens', () => {
     it('should revoke all tokens for a user', async () => {
       mockPrismaService.refreshToken.updateMany.mockResolvedValue({ count: 5 });

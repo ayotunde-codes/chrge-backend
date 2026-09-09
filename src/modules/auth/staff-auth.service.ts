@@ -180,6 +180,18 @@ export class StaffAuthService {
   sessions(userId: string) {
     return this.tokens.listAdminSessions(userId);
   }
+  async logout(userId: string, refreshToken: string, meta: Meta) {
+    await this.tokens.revokeAdminRefreshToken(userId, refreshToken);
+    await this.audit.create(
+      { actorId: userId, requestId: meta.requestId, ipAddress: meta.ip, userAgent: meta.userAgent },
+      {
+        action: 'staff.logout',
+        targetType: 'staff_session',
+        sensitivity: 'SENSITIVE' as never,
+      },
+    );
+    return { message: 'Logged out successfully' };
+  }
   async revoke(userId: string, sessionId: string | undefined, meta: Meta) {
     await this.tokens.revokeAdminSession(userId, sessionId);
     await this.audit.create(

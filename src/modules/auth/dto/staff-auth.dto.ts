@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsUUID, Matches } from 'class-validator';
+import { IsEmail, IsString, IsUUID, Matches, MinLength } from 'class-validator';
 export class StaffLoginDto {
   @IsEmail() email: string;
   @IsString() password: string;
@@ -10,4 +10,10 @@ export class StaffMfaDto {
     message: 'code must be a six-digit authenticator code or a recovery code',
   })
   code: string;
+}
+
+export class StaffLogoutDto {
+  @IsString()
+  @MinLength(32)
+  refreshToken: string;
 }
