@@ -16,6 +16,16 @@ function encryptionKey(config: ConfigService): Buffer {
   return key;
 }
 
+function previousEncryptionKey(config: ConfigService): Buffer | undefined {
+  const value = config.get<string>('ADMIN_MFA_PREVIOUS_ENCRYPTION_KEY');
+  if (!value) return undefined;
+  const key = Buffer.from(value, 'base64');
+  if (key.length !== 32) {
+    throw new Error('ADMIN_MFA_PREVIOUS_ENCRYPTION_KEY must decode to 32 bytes');
+  }
+  return key;
+}
+
 export function generateStaffMfaSecret(): string {
   const bytes = randomBytes(20);
   let bits = '';
@@ -33,10 +43,21 @@ export function encryptStaffMfaSecret(config: ConfigService, secret: string): st
 }
 
 export function decryptStaffMfaSecret(config: ConfigService, value: string): string {
+  const current = encryptionKey(config);
+  try {
+    return decryptStaffMfaSecretWithKey(current, value);
+  } catch (error) {
+    const previous = previousEncryptionKey(config);
+    if (!previous) throw error;
+    return decryptStaffMfaSecretWithKey(previous, value);
+  }
+}
+
+function decryptStaffMfaSecretWithKey(key: Buffer, value: string): string {
   const [ivText, tagText, cipherText] = value.split('.');
   const decipher = createDecipheriv(
     'aes-256-gcm',
-    encryptionKey(config),
+    key,
     Buffer.from(ivText, 'base64url'),
   );
   decipher.setAuthTag(Buffer.from(tagText, 'base64url'));

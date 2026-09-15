@@ -14,7 +14,10 @@ describe('staff MFA helpers', () => {
     ADMIN_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
     RECOVERY_CODE_PEPPER: 'test-recovery-pepper-that-is-not-production',
   };
-  const config = { getOrThrow: (name: string) => values[name] } as ConfigService;
+  const config = {
+    get: (name: string) => values[name],
+    getOrThrow: (name: string) => values[name],
+  } as ConfigService;
 
   afterEach(() => jest.restoreAllMocks());
 
@@ -24,6 +27,28 @@ describe('staff MFA helpers', () => {
     expect(encrypted).not.toContain(secret);
     expect(decryptStaffMfaSecret(config, encrypted)).toBe(secret);
     expect(staffOtpAuthUri('admin@example.com', secret)).toContain(`secret=${secret}&issuer=CHRGE`);
+  });
+
+  it('keeps existing staff TOTP secrets readable while encrypting new ones with the rotated key', () => {
+    const secret = generateStaffMfaSecret();
+    const oldEnvelope = encryptStaffMfaSecret(config, secret);
+    const rotatedValues: Record<string, string> = {
+      ADMIN_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 8).toString('base64'),
+      ADMIN_MFA_PREVIOUS_ENCRYPTION_KEY: values.ADMIN_MFA_ENCRYPTION_KEY,
+    };
+    const rotated = {
+      get: (name: string) => rotatedValues[name],
+      getOrThrow: (name: string) => rotatedValues[name],
+    } as ConfigService;
+
+    expect(decryptStaffMfaSecret(rotated, oldEnvelope)).toBe(secret);
+    const newEnvelope = encryptStaffMfaSecret(rotated, secret);
+    expect(decryptStaffMfaSecret(rotated, newEnvelope)).toBe(secret);
+    expect(() => decryptStaffMfaSecret(config, newEnvelope)).toThrow();
+    const [iv, tag, ciphertext] = oldEnvelope.split('.');
+    const tampered = Buffer.from(ciphertext, 'base64url');
+    tampered[0] ^= 1;
+    expect(() => decryptStaffMfaSecret(rotated, `${iv}.${tag}.${tampered.toString('base64url')}`)).toThrow();
   });
 
   it('verifies a known RFC 6238 TOTP vector with the six-digit policy', () => {

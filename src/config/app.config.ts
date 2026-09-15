@@ -47,6 +47,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  ADMIN_MFA_PREVIOUS_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
   RECOVERY_CODE_PEPPER: string;
 
   @IsString()
@@ -100,6 +104,10 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CNG_APPLICATION_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_APPLICATION_PREVIOUS_ENCRYPTION_KEY: string;
 
   @IsString()
   @IsOptional()
