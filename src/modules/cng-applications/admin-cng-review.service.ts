@@ -91,7 +91,6 @@ export class AdminCngReviewService {
   async document(
     applicationId: string,
     documentId: string,
-    reason: string,
     context: {
       actorId: string;
       actorRole: UserRole;
@@ -103,8 +102,6 @@ export class AdminCngReviewService {
   ) {
     if (!mfaAt || Date.now() / 1000 - mfaAt > 300)
       throw new ForbiddenException('Fresh step-up authentication is required');
-    if (!reason || reason.trim().length < 10)
-      throw new ForbiddenException('A specific access reason is required');
     const doc = await this.prisma.cngApplicationDocument.findFirst({
       where: { id: documentId, applicationId },
     });
@@ -115,7 +112,6 @@ export class AdminCngReviewService {
       action: 'cng.document_download',
       targetType: 'cng_document',
       targetId: doc.id,
-      reason,
       sensitivity: AuditSensitivity.RESTRICTED,
       metadata: { applicationId, documentType: doc.type },
     });
