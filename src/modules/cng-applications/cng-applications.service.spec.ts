@@ -223,13 +223,13 @@ describe('CngApplicationsService', () => {
     await service.saveFinancingDetails(application.id, {
       packageId: 'B',
       financingPlanId: CngFinancingPlan.Gold,
-      preferredLoanTenor: 6,
       privacyConsent: true,
     });
 
     expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          preferredLoanTenor: 6,
           packagePriceNgn: 110000,
           depositAmountNgn: 55000,
           financedAmountNgn: 55000,
@@ -262,7 +262,6 @@ describe('CngApplicationsService', () => {
     await service.saveFinancingDetails(application.id, {
       packageId: 'D',
       financingPlanId: CngFinancingPlan.Bronze,
-      preferredLoanTenor: 12,
       privacyConsent: true,
     });
 
@@ -270,6 +269,7 @@ describe('CngApplicationsService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           packageId: 'D',
+          preferredLoanTenor: 12,
           packagePriceNgn: 200000,
           depositAmountNgn: 20000,
           financedAmountNgn: 180000,

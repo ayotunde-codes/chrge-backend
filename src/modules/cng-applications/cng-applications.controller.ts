@@ -155,7 +155,7 @@ export class CngApplicationsController {
   @Patch(':id/financing')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Save package, financing, loan tenor, and privacy consent' })
+  @ApiOperation({ summary: 'Save package, deposit-based financing plan, and privacy consent' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
   async saveFinancingDetails(
     @Param('id', ParseUUIDPipe) id: string,

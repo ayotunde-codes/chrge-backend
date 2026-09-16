@@ -232,14 +232,6 @@ export class SaveFinancingDetailsDto {
   @IsEnum(CngFinancingPlan)
   financingPlanId: CngFinancingPlan;
 
-  @ApiPropertyOptional({ example: 6, minimum: 1, maximum: 12 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(12)
-  preferredLoanTenor?: number;
-
   @ApiProperty({ example: true })
   @Equals(true, { message: 'privacyConsent must be accepted' })
   privacyConsent: true;

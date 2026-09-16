@@ -300,10 +300,6 @@ export class CngApplicationsService {
     const plan = CNG_FINANCING_PLANS[dto.financingPlanId];
     const packageDetails = CNG_PACKAGES[dto.packageId];
 
-    if (dto.financingPlanId !== CngFinancingPlan.Full && !dto.preferredLoanTenor) {
-      throw new BadRequestException('Preferred loan tenor is required for financed plans');
-    }
-
     const depositAmountNgn = Math.round(packageDetails.priceNgn * (plan.depositPct / 100));
     const financedAmountNgn = packageDetails.priceNgn - depositAmountNgn;
     const interestAmountNgn = Math.round(packageDetails.priceNgn * plan.interestRate);
@@ -317,8 +313,7 @@ export class CngApplicationsService {
       data: {
         packageId: dto.packageId,
         financingPlanId: dto.financingPlanId,
-        preferredLoanTenor:
-          dto.financingPlanId === CngFinancingPlan.Full ? null : dto.preferredLoanTenor,
+        preferredLoanTenor: plan.tenure,
         packagePriceNgn: packageDetails.priceNgn,
         depositAmountNgn,
         financedAmountNgn,
@@ -633,7 +628,7 @@ export class CngApplicationsService {
       ? {
           packageId: application.packageId,
           financingPlanId: application.financingPlanId,
-          preferredLoanTenor: application.preferredLoanTenor,
+          repaymentTenure: application.preferredLoanTenor,
           packagePriceNgn: application.packagePriceNgn,
           depositAmountNgn: application.depositAmountNgn,
           financedAmountNgn: application.financedAmountNgn,

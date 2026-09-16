@@ -69,7 +69,13 @@ export class AdminCngReviewService {
       financing: {
         packageId: app.packageId,
         financingPlanId: app.financingPlanId,
-        preferredLoanTenor: app.preferredLoanTenor,
+        repaymentTenure: app.preferredLoanTenor,
+        packagePriceNgn: app.packagePriceNgn,
+        depositAmountNgn: app.depositAmountNgn,
+        financedAmountNgn: app.financedAmountNgn,
+        interestAmountNgn: app.interestAmountNgn,
+        monthlyPaymentNgn: app.monthlyPaymentNgn,
+        totalCostNgn: app.totalCostNgn,
         monthlyIncome: app.monthlyIncome ? 'Provided — restricted' : null,
       },
       documents: app.documents.map((d) => ({
