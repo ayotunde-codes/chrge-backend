@@ -3,6 +3,7 @@ import { AuditSensitivity, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { DocumentStorageService } from './document-storage.service';
+import { SensitiveDataService } from './sensitive-data.service';
 
 @Injectable()
 export class AdminCngReviewService {
@@ -10,17 +11,8 @@ export class AdminCngReviewService {
     private readonly prisma: PrismaService,
     private readonly storage: DocumentStorageService,
     private readonly audit: AuditService,
+    private readonly sensitiveData: SensitiveDataService,
   ) {}
-  private mask(value: string | null, visible = 4) {
-    return value
-      ? `${'•'.repeat(Math.max(4, value.length - visible))}${value.slice(-visible)}`
-      : null;
-  }
-  private maskEmail(email: string | null) {
-    if (!email) return null;
-    const [name, domain] = email.split('@');
-    return `${name.slice(0, 2)}${'•'.repeat(Math.max(2, name.length - 2))}@${domain}`;
-  }
 
   async detail(
     id: string,
@@ -48,29 +40,26 @@ export class AdminCngReviewService {
       reference: app.reference,
       status: app.status,
       applicant: {
-        name: [app.firstName, app.lastName]
-          .filter(Boolean)
-          .map((v) => `${v?.slice(0, 1)}•••`)
-          .join(' '),
-        email: this.maskEmail(app.email),
-        phone: this.mask(app.phone),
-        bvnMasked: app.bvnLast4 ? `•••••••${app.bvnLast4}` : null,
-        ninMasked: app.ninLast4 ? `•••••••${app.ninLast4}` : null,
+        name: [app.firstName, app.middleName, app.lastName].filter(Boolean).join(' '),
+        email: app.email,
+        phone: app.phone,
+        bvn: app.bvnEncrypted ? this.sensitiveData.decrypt(app.bvnEncrypted) : null,
+        nin: app.ninEncrypted ? this.sensitiveData.decrypt(app.ninEncrypted) : null,
         state: app.state,
       },
       vehicle: {
         brand: app.vehicleBrand,
         model: app.vehicleModel,
         year: app.vehicleYear,
-        licensePlate: this.mask(app.licensePlate),
-        chassisNumber: this.mask(app.chassisNumber),
-        engineNumber: this.mask(app.engineNumber),
+        licensePlate: app.licensePlate,
+        chassisNumber: app.chassisNumber,
+        engineNumber: app.engineNumber,
       },
       financing: {
         packageId: app.packageId,
         financingPlanId: app.financingPlanId,
         preferredLoanTenor: app.preferredLoanTenor,
-        monthlyIncome: app.monthlyIncome ? 'Provided — restricted' : null,
+        monthlyIncome: app.monthlyIncome,
       },
       documents: app.documents.map((d) => ({
         id: d.id,
