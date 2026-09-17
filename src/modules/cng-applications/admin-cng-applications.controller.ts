@@ -77,11 +77,10 @@ export class AdminCngApplicationsController {
   }
 
   @Get(':id/documents/:documentId/download')
-  @ApiOperation({ summary: 'Audited, step-up-protected private document stream' })
+  @ApiOperation({ summary: 'Open an audited, step-up-protected private document' })
   async downloadDocument(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('documentId', ParseUUIDPipe) documentId: string,
-    @Query('reason') reason: string,
     @CurrentUser() user: JwtPayload,
     @Req() request: Request,
     @Res() response: Response,
@@ -89,13 +88,15 @@ export class AdminCngApplicationsController {
     const { document, stream } = await this.adminReview.document(
       id,
       documentId,
-      reason,
       this.context(user, request),
       user.mfaAt,
     );
     response.setHeader('Content-Type', document.mimeType);
     response.setHeader('Content-Length', document.sizeBytes);
-    response.setHeader('Content-Disposition', 'attachment; filename="protected-document"');
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(document.originalName)}`,
+    );
     response.setHeader('Cache-Control', 'no-store, private');
     response.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
     response.setHeader(
