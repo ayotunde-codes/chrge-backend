@@ -1,12 +1,15 @@
 import { ForbiddenException } from '@nestjs/common';
-import { CngAvailabilityStatus, Prisma, StationAssociationStatus } from '@prisma/client';
+import { CngAvailabilityStatus, Prisma, StationAssociationStatus, StationConditionSource } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StationPortalService } from './station-portal.service';
 
 describe('StationPortalService', () => {
   const prisma = {
+    station: { findFirst: jest.fn() },
+    user: { findFirst: jest.fn() },
     stationAssociation: { findFirst: jest.fn(), findMany: jest.fn() },
     stationConditionReport: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
   };
   const service = new StationPortalService(prisma as unknown as PrismaService);
 
@@ -84,5 +87,47 @@ describe('StationPortalService', () => {
     });
 
     expect(result).toMatchObject({ changed: true, duplicate: true, report: { id: 'report-1' } });
+  });
+
+  it('marks an administrator report as admin-sourced', async () => {
+    prisma.stationConditionReport.findUnique.mockResolvedValue({
+      id: 'report-admin',
+      availability: CngAvailabilityStatus.AVAILABLE,
+      estimatedQueueLength: 3,
+      pumpPressureBar: new Prisma.Decimal(200),
+      source: StationConditionSource.ADMIN,
+      reportedAt: new Date('2026-09-17T10:00:00Z'),
+      reporter: { firstName: 'Admin', lastName: 'QA', email: 'admin@example.com' },
+    });
+
+    const result = await service.submitAdminReport('admin-1', 'station-1', {
+      availability: 'AVAILABLE',
+      estimatedQueueLength: 3,
+      pumpPressureBar: 200,
+      idempotencyKey: 'admin-key-123',
+    });
+
+    expect(result).toMatchObject({ report: { id: 'report-admin', source: StationConditionSource.ADMIN } });
+  });
+
+  it('replaces the active station manager and immediately approves the selected user', async () => {
+    prisma.station.findFirst.mockResolvedValue({ id: 'station-1' });
+    prisma.user.findFirst.mockResolvedValue({ id: 'user-2' });
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const upsert = jest.fn().mockResolvedValue({ id: 'association-2', status: 'APPROVED' });
+    prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
+      stationAssociation: { updateMany, upsert },
+    }));
+
+    const result = await service.assignManager('admin-1', 'station-1', 'user-2');
+
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ stationId: 'station-1', userId: { not: 'user-2' } }),
+      data: { status: StationAssociationStatus.SUSPENDED },
+    }));
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ status: StationAssociationStatus.APPROVED, approvedBy: 'admin-1' }),
+    }));
+    expect(result).toMatchObject({ id: 'association-2', status: 'APPROVED' });
   });
 });

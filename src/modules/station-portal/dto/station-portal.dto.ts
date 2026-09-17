@@ -54,6 +54,12 @@ export class RequestStationAssociationDto {
   stationId: string;
 }
 
+export class AssignStationManagerDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  userId: string;
+}
+
 export class SubmitStationConditionDto {
   @ApiProperty({ enum: ['AVAILABLE', 'UNAVAILABLE'] })
   @IsIn(['AVAILABLE', 'UNAVAILABLE'])

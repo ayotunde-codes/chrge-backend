@@ -8,7 +8,9 @@ import {
 import {
   CngAvailabilityStatus,
   Prisma,
+  StationAssociationRole,
   StationAssociationStatus,
+  StationConditionSource,
   StationType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -134,6 +136,99 @@ export class StationPortalService {
 
   async submitReport(userId: string, stationId: string, dto: SubmitStationConditionDto) {
     await this.assertApprovedStationAccess(userId, stationId);
+    return this.persistReport(userId, stationId, dto, StationConditionSource.STATION_PORTAL);
+  }
+
+  async submitAdminReport(adminId: string, stationId: string, dto: SubmitStationConditionDto) {
+    return this.persistReport(adminId, stationId, dto, StationConditionSource.ADMIN);
+  }
+
+  async getStationManagement(stationId: string) {
+    const station = await this.prisma.station.findFirst({
+      where: { id: stationId, deletedAt: null },
+    });
+    if (!station) throw new NotFoundException('Station not found');
+    const [manager, reports] = await Promise.all([
+      this.prisma.stationAssociation.findFirst({
+        where: {
+          stationId,
+          role: StationAssociationRole.MANAGER,
+          status: StationAssociationStatus.APPROVED,
+        },
+        include: {
+          user: { select: { id: true, email: true, firstName: true, lastName: true, emailVerified: true } },
+        },
+        orderBy: { approvedAt: 'desc' },
+      }),
+      this.prisma.stationConditionReport.findMany({
+        where: { stationId },
+        include: { reporter: { select: { firstName: true, lastName: true, email: true } } },
+        orderBy: { reportedAt: 'desc' },
+        take: 10,
+      }),
+    ]);
+    return {
+      station: this.mapStation(station),
+      manager,
+      recentReports: reports.map((report) => this.mapReport(report)),
+    };
+  }
+
+  async assignManager(adminId: string, stationId: string, userId: string) {
+    const [station, user] = await Promise.all([
+      this.prisma.station.findFirst({
+        where: {
+          id: stationId,
+          deletedAt: null,
+          isActive: true,
+          status: 'APPROVED',
+          stationType: { in: [StationType.CNG, StationType.HYBRID] },
+        },
+      }),
+      this.prisma.user.findFirst({ where: { id: userId, deletedAt: null } }),
+    ]);
+    if (!station) throw new BadRequestException('Only approved active CNG stations can have a manager');
+    if (!user) throw new NotFoundException('CHRGE user not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.stationAssociation.updateMany({
+        where: {
+          stationId,
+          role: StationAssociationRole.MANAGER,
+          status: StationAssociationStatus.APPROVED,
+          userId: { not: userId },
+        },
+        data: { status: StationAssociationStatus.SUSPENDED },
+      });
+      return tx.stationAssociation.upsert({
+        where: { stationId_userId: { stationId, userId } },
+        create: {
+          stationId,
+          userId,
+          role: StationAssociationRole.MANAGER,
+          status: StationAssociationStatus.APPROVED,
+          approvedBy: adminId,
+          approvedAt: new Date(),
+        },
+        update: {
+          role: StationAssociationRole.MANAGER,
+          status: StationAssociationStatus.APPROVED,
+          approvedBy: adminId,
+          approvedAt: new Date(),
+        },
+        include: {
+          user: { select: { id: true, email: true, firstName: true, lastName: true, emailVerified: true } },
+        },
+      });
+    });
+  }
+
+  private async persistReport(
+    userId: string,
+    stationId: string,
+    dto: SubmitStationConditionDto,
+    source: StationConditionSource,
+  ) {
     const existing = await this.prisma.stationConditionReport.findUnique({
       where: { reportedBy_idempotencyKey: { reportedBy: userId, idempotencyKey: dto.idempotencyKey } },
       include: { reporter: { select: { firstName: true, lastName: true, email: true } } },
@@ -170,6 +265,7 @@ export class StationPortalService {
           estimatedQueueLength: dto.estimatedQueueLength,
           pumpPressureBar: new Prisma.Decimal(dto.pumpPressureBar),
           reportedBy: userId,
+          source,
           idempotencyKey: dto.idempotencyKey,
         },
         include: { reporter: { select: { firstName: true, lastName: true, email: true } } },
@@ -181,7 +277,7 @@ export class StationPortalService {
           data: { endedAt: now },
         });
         await tx.stationAvailabilityEvent.create({
-          data: { stationId, status: availability, startedAt: now, updatedBy: userId },
+          data: { stationId, status: availability, startedAt: now, updatedBy: userId, source },
         });
       }
 
@@ -291,6 +387,7 @@ export class StationPortalService {
   private mapReport(report: {
     id: string; availability: CngAvailabilityStatus; estimatedQueueLength: number;
     pumpPressureBar: Prisma.Decimal; reportedAt: Date;
+    source?: StationConditionSource;
     reporter: { firstName: string | null; lastName: string | null; email: string };
   }) {
     const fullName = [report.reporter.firstName, report.reporter.lastName].filter(Boolean).join(' ');
@@ -301,6 +398,7 @@ export class StationPortalService {
       pumpPressureBar: Number(report.pumpPressureBar),
       reportedAt: report.reportedAt,
       reportedBy: fullName || report.reporter.email,
+      source: report.source ?? StationConditionSource.STATION_PORTAL,
     };
   }
 }
