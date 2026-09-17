@@ -84,10 +84,10 @@ describe('CngApplicationsService', () => {
     };
 
     expect(configuration.packages).toEqual([
-      { id: 'A', name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 85000 },
-      { id: 'B', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 110000 },
-      { id: 'C', name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 140000 },
-      { id: 'D', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 200000 },
+      { id: 'A', name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 850000 },
+      { id: 'B', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 1100000 },
+      { id: 'C', name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 1400000 },
+      { id: 'D', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 2000000 },
     ]);
   });
 
@@ -217,12 +217,12 @@ describe('CngApplicationsService', () => {
       packageId: 'B',
       financingPlanId: CngFinancingPlan.Gold,
       preferredLoanTenor: 6,
-      packagePriceNgn: 110000,
-      depositAmountNgn: 55000,
-      financedAmountNgn: 55000,
-      interestAmountNgn: 11000,
-      monthlyPaymentNgn: 11000,
-      totalCostNgn: 121000,
+      packagePriceNgn: 1100000,
+      depositAmountNgn: 550000,
+      financedAmountNgn: 550000,
+      interestAmountNgn: 110000,
+      monthlyPaymentNgn: 110000,
+      totalCostNgn: 1210000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
       financingCompletedAt: new Date(),
@@ -238,12 +238,12 @@ describe('CngApplicationsService', () => {
     expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          packagePriceNgn: 110000,
-          depositAmountNgn: 55000,
-          financedAmountNgn: 55000,
-          interestAmountNgn: 11000,
-          monthlyPaymentNgn: 11000,
-          totalCostNgn: 121000,
+          packagePriceNgn: 1100000,
+          depositAmountNgn: 550000,
+          financedAmountNgn: 550000,
+          interestAmountNgn: 110000,
+          monthlyPaymentNgn: 110000,
+          totalCostNgn: 1210000,
         }),
       }),
     );
@@ -256,12 +256,12 @@ describe('CngApplicationsService', () => {
       packageId: 'D',
       financingPlanId: CngFinancingPlan.Bronze,
       preferredLoanTenor: 12,
-      packagePriceNgn: 200000,
-      depositAmountNgn: 20000,
-      financedAmountNgn: 180000,
-      interestAmountNgn: 40000,
-      monthlyPaymentNgn: 18333,
-      totalCostNgn: 240000,
+      packagePriceNgn: 2000000,
+      depositAmountNgn: 200000,
+      financedAmountNgn: 1800000,
+      interestAmountNgn: 400000,
+      monthlyPaymentNgn: 183333,
+      totalCostNgn: 2400000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
       financingCompletedAt: new Date(),
@@ -278,12 +278,12 @@ describe('CngApplicationsService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           packageId: 'D',
-          packagePriceNgn: 200000,
-          depositAmountNgn: 20000,
-          financedAmountNgn: 180000,
-          interestAmountNgn: 40000,
-          monthlyPaymentNgn: 18333,
-          totalCostNgn: 240000,
+          packagePriceNgn: 2000000,
+          depositAmountNgn: 200000,
+          financedAmountNgn: 1800000,
+          interestAmountNgn: 400000,
+          monthlyPaymentNgn: 183333,
+          totalCostNgn: 2400000,
         }),
       }),
     );
