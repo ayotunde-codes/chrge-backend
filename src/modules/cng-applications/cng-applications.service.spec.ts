@@ -40,6 +40,14 @@ describe('CngApplicationsService', () => {
       upsert: jest.fn(),
       delete: jest.fn(),
     },
+    cngApplicationReviewNote: {
+      create: jest.fn(),
+    },
+    cngInstallment: {
+      createMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
   const mockSensitive = {
@@ -425,6 +433,55 @@ describe('CngApplicationsService', () => {
     expect(result.applications[0]).not.toHaveProperty('documents');
     expect(JSON.stringify(result.applications[0])).not.toContain('8901');
   });
+
+  it('starts review without approving the application', async () => {
+    const submitted = { ...application, status: CngApplicationStatus.SUBMITTED };
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(submitted);
+    mockPrisma.cngApplication.update.mockResolvedValue({
+      ...submitted,
+      status: CngApplicationStatus.UNDER_REVIEW,
+      reviewedBy: 'admin-1',
+      reviewedAt: new Date(),
+    });
+
+    await service.reviewApplication(application.id, 'admin-1', {
+      status: CngApplicationStatus.UNDER_REVIEW,
+    });
+
+    expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: CngApplicationStatus.UNDER_REVIEW }),
+      }),
+    );
+  });
+
+  it('stores internal review notes as append-only history', async () => {
+    mockPrisma.cngApplication.findUnique.mockResolvedValue({
+      ...application,
+      status: CngApplicationStatus.UNDER_REVIEW,
+    });
+    mockPrisma.cngApplicationReviewNote.create.mockResolvedValue({});
+
+    await service.submitReviewNote(application.id, 'admin-1', { note: '  Checks completed.  ' });
+
+    expect(mockPrisma.cngApplicationReviewNote.create).toHaveBeenCalledWith({
+      data: { applicationId: application.id, authorId: 'admin-1', note: 'Checks completed.' },
+    });
+  });
+
+  it('prevents rejection after finance has been disbursed', async () => {
+    mockPrisma.cngApplication.findUnique.mockResolvedValue({
+      ...application,
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    await expect(
+      service.reviewApplication(application.id, 'admin-1', {
+        status: CngApplicationStatus.REJECTED,
+        rejectionReason: 'The application failed the final checks.',
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
 });
 
 function makeApplication(): ApplicationWithDocuments {
@@ -493,6 +550,12 @@ function makeApplication(): ApplicationWithDocuments {
     reviewedBy: null,
     reviewNote: null,
     rejectionReason: null,
+    inspectionAppointmentAt: null,
+    financingApprovedAt: null,
+    conversionAppointmentAt: null,
+    financeDisbursedAt: null,
+    conversionCompletedAt: null,
+    fullyPaidAt: null,
     cancelledAt: null,
     createdAt: now,
     updatedAt: now,
