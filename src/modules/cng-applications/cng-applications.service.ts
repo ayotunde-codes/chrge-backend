@@ -864,9 +864,7 @@ export class CngApplicationsService {
           .filter(Boolean)
           .map((value) => `${value?.slice(0, 1)}•••`)
           .join(' '),
-        email: application.email
-          ? `${application.email.slice(0, 2)}•••@${application.email.split('@')[1]}`
-          : null,
+        email: application.email,
         phone: application.phone ? `••••••${application.phone.slice(-4)}` : null,
       },
       vehicle: {

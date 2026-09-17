@@ -406,7 +406,7 @@ describe('CngApplicationsService', () => {
     expect(mockDocumentStorage.putObject).not.toHaveBeenCalled();
   });
 
-  it('returns PII-minimized summaries from the administrative list', async () => {
+  it('returns the applicant email in administrative list summaries', async () => {
     mockPrisma.cngApplication.findMany.mockResolvedValue([
       {
         ...application,
@@ -426,7 +426,7 @@ describe('CngApplicationsService', () => {
 
     expect(result.applications[0]).toEqual(
       expect.objectContaining({
-        applicant: expect.objectContaining({ email: 'em•••@example.com', phone: '••••••5678' }),
+        applicant: expect.objectContaining({ email: 'emeka@example.com', phone: '••••••5678' }),
       }),
     );
     expect(result.applications[0]).not.toHaveProperty('personal');
