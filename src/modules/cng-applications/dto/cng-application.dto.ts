@@ -286,17 +286,9 @@ export class AdminCngApplicationQueryDto {
 
 export class ReviewCngApplicationDto {
   @ApiProperty({
-    enum: [
-      CngApplicationStatus.UNDER_REVIEW,
-      CngApplicationStatus.APPROVED,
-      CngApplicationStatus.REJECTED,
-    ],
+    enum: [CngApplicationStatus.UNDER_REVIEW, CngApplicationStatus.REJECTED],
   })
-  @IsIn([
-    CngApplicationStatus.UNDER_REVIEW,
-    CngApplicationStatus.APPROVED,
-    CngApplicationStatus.REJECTED,
-  ])
+  @IsIn([CngApplicationStatus.UNDER_REVIEW, CngApplicationStatus.REJECTED])
   status: CngApplicationStatus;
 
   @ApiPropertyOptional({ example: 'Identity and affordability checks completed.' })
@@ -310,4 +302,73 @@ export class ReviewCngApplicationDto {
   @IsString()
   @MaxLength(2000)
   rejectionReason?: string;
+}
+
+export class SubmitCngReviewNoteDto {
+  @ApiProperty({ example: 'Identity and affordability checks completed.' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(2000)
+  note: string;
+}
+
+export class AdvanceCngWorkflowDto {
+  @ApiProperty({
+    enum: [
+      CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
+      CngApplicationStatus.FINANCING_APPROVED,
+      CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+      CngApplicationStatus.FINANCE_DISBURSED,
+      CngApplicationStatus.CONVERSION_COMPLETED,
+    ],
+  })
+  @IsIn([
+    CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
+    CngApplicationStatus.FINANCING_APPROVED,
+    CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+    CngApplicationStatus.FINANCE_DISBURSED,
+    CngApplicationStatus.CONVERSION_COMPLETED,
+  ])
+  status: CngApplicationStatus;
+
+  @ApiPropertyOptional({ example: '2026-09-20T10:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+}
+
+export class CngRepaymentWebhookDto {
+  @ApiProperty({ example: 'evt_123' })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  eventId: string;
+
+  @ApiProperty({ example: 'CNG-2026-A1B2C3D4' })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(50)
+  applicationReference: string;
+
+  @ApiProperty({ example: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  installmentNumber: number;
+
+  @ApiProperty({ example: 110000 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amountNgn: number;
+
+  @ApiProperty({ example: '2026-10-20T10:00:00.000Z' })
+  @IsDateString()
+  paidAt: string;
+
+  @ApiPropertyOptional({ example: 'pay_123' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  providerReference?: string;
 }

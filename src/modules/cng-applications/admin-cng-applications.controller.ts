@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
   Req,
@@ -23,7 +24,12 @@ import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
 import { CngApplicationsService } from './cng-applications.service';
 import { AdminCngReviewService } from './admin-cng-review.service';
 import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
-import { AdminCngApplicationQueryDto, ReviewCngApplicationDto } from './dto/cng-application.dto';
+import {
+  AdvanceCngWorkflowDto,
+  AdminCngApplicationQueryDto,
+  ReviewCngApplicationDto,
+  SubmitCngReviewNoteDto,
+} from './dto/cng-application.dto';
 import {
   AdminCngApplicationListResponseDto,
   CngApplicationResponseDto,
@@ -111,7 +117,7 @@ export class AdminCngApplicationsController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: ReviewCngApplicationDto,
   ): Promise<Record<string, unknown>> {
-    const sensitiveDecision = dto.status === 'APPROVED' || dto.status === 'REJECTED';
+    const sensitiveDecision = dto.status === 'REJECTED';
     if (
       sensitiveDecision &&
       (user.role === 'OPERATOR' || !user.mfaAt || Date.now() / 1000 - user.mfaAt > 300)
@@ -119,5 +125,37 @@ export class AdminCngApplicationsController {
       throw new ForbiddenException('Administrator role and fresh step-up authentication required');
     }
     return this.cngApplicationsService.reviewApplication(id, user.sub, dto);
+  }
+
+  @Post(':id/notes')
+  @ApiOperation({ summary: 'Append an internal note to a CNG application' })
+  async submitNote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SubmitCngReviewNoteDto,
+  ) {
+    return this.cngApplicationsService.submitReviewNote(id, user.sub, dto);
+  }
+
+  @Patch(':id/workflow')
+  @ApiOperation({ summary: 'Advance a CNG application through the financing workflow' })
+  async advanceWorkflow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AdvanceCngWorkflowDto,
+  ) {
+    if (
+      user.role === 'OPERATOR' &&
+      ['FINANCING_APPROVED', 'FINANCE_DISBURSED'].includes(dto.status)
+    ) {
+      throw new ForbiddenException('Administrator role required for financial decisions');
+    }
+    if (
+      ['FINANCING_APPROVED', 'FINANCE_DISBURSED'].includes(dto.status) &&
+      (!user.mfaAt || Date.now() / 1000 - user.mfaAt > 300)
+    ) {
+      throw new ForbiddenException('Fresh step-up authentication required');
+    }
+    return this.cngApplicationsService.advanceWorkflow(id, dto);
   }
 }
