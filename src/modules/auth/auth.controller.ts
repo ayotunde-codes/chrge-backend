@@ -28,7 +28,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserResponseDto } from '../users/dto/user-response.dto';
-import { ConfirmPasswordResetDto, RequestPasswordResetDto } from './dto/password-reset.dto';
+import { ConfirmPasswordResetDto, RequestPasswordResetDto, VerifyPasswordResetDto } from './dto/password-reset.dto';
 import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('auth')
@@ -117,6 +117,15 @@ export class AuthController {
   @ApiOperation({ summary: 'Request a one-time password reset code by email' })
   requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
     return this.passwordReset.request(dto);
+  }
+
+  @Post('password-reset/verify')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ auth: { limit: 8, ttl: 60000 } })
+  @ApiOperation({ summary: 'Verify an emailed password reset code before password entry' })
+  verifyPasswordReset(@Body() dto: VerifyPasswordResetDto) {
+    return this.passwordReset.verify(dto);
   }
 
   @Post('password-reset/confirm')

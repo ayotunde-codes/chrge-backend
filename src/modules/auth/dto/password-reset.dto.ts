@@ -7,12 +7,14 @@ export class RequestPasswordResetDto {
   email: string;
 }
 
-export class ConfirmPasswordResetDto extends RequestPasswordResetDto {
+export class VerifyPasswordResetDto extends RequestPasswordResetDto {
   @ApiProperty({ example: '123456' })
   @IsString()
   @Matches(/^\d{6}$/, { message: 'Enter the six-digit code sent to your email' })
   code: string;
+}
 
+export class ConfirmPasswordResetDto extends VerifyPasswordResetDto {
   @ApiProperty({ example: 'SecureP@ss123', minLength: 8 })
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters long' })

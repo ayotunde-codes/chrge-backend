@@ -4,7 +4,7 @@ import { createHmac, randomInt, timingSafeEqual } from 'crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ResendEmailService } from './resend-email.service';
-import { ConfirmPasswordResetDto, RequestPasswordResetDto } from './dto/password-reset.dto';
+import { ConfirmPasswordResetDto, RequestPasswordResetDto, VerifyPasswordResetDto } from './dto/password-reset.dto';
 
 @Injectable()
 export class PasswordResetService {
@@ -54,7 +54,7 @@ export class PasswordResetService {
     return { message: this.genericMessage };
   }
 
-  async confirm(dto: ConfirmPasswordResetDto): Promise<{ message: string }> {
+  private async validateCode(dto: VerifyPasswordResetDto) {
     const invalid = new UnauthorizedException('The reset code is invalid or has expired. Request a new code.');
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.trim().toLowerCase() },
@@ -68,13 +68,25 @@ export class PasswordResetService {
     });
     if (!challenge || challenge.expiresAt <= new Date() || challenge.attempts >= 5) throw invalid;
 
-    await this.prisma.passwordResetChallenge.update({
-      where: { id: challenge.id },
-      data: { attempts: { increment: 1 } },
-    });
     const expected = Buffer.from(challenge.codeHash, 'hex');
     const received = Buffer.from(this.hash(user.id, dto.code), 'hex');
-    if (expected.length !== received.length || !timingSafeEqual(expected, received)) throw invalid;
+    if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+      await this.prisma.passwordResetChallenge.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw invalid;
+    }
+    return { user, challenge, invalid };
+  }
+
+  async verify(dto: VerifyPasswordResetDto): Promise<{ valid: true; message: string }> {
+    await this.validateCode(dto);
+    return { valid: true, message: 'Code verified. You can now create a new password.' };
+  }
+
+  async confirm(dto: ConfirmPasswordResetDto): Promise<{ message: string }> {
+    const { user, challenge, invalid } = await this.validateCode(dto);
 
     const passwordHash = await argon2.hash(dto.newPassword, {
       type: argon2.argon2id,

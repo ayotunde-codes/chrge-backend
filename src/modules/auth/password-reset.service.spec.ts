@@ -73,6 +73,20 @@ describe('PasswordResetService', () => {
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: expect.any(Date) } });
   });
 
+  it('verifies the code without consuming it before password entry', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: user.id, deletedAt: null });
+    prisma.passwordResetChallenge.findFirst.mockResolvedValue({
+      id: 'challenge-1', userId: user.id,
+      codeHash: createHmac('sha256', 'test-secret').update(`${user.id}:123456`).digest('hex'),
+      attempts: 0, expiresAt: new Date(Date.now() + 60_000), consumedAt: null, createdAt: new Date(),
+    });
+    await expect(service.verify({ email: user.email, code: '123456' })).resolves.toEqual({
+      valid: true, message: 'Code verified. You can now create a new password.',
+    });
+    expect(prisma.passwordResetChallenge.updateMany).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
   it('rejects an invalid code after counting the attempt', async () => {
     prisma.user.findUnique.mockResolvedValue({ id: user.id, deletedAt: null });
     prisma.passwordResetChallenge.findFirst.mockResolvedValue({
