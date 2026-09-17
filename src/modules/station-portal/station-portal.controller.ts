@@ -35,6 +35,12 @@ export class StationPortalController {
     return this.service.getMyStation(user.sub);
   }
 
+  @Get('me/associations')
+  @ApiOperation({ summary: 'Get the signed-in representative station access requests' })
+  getMyAssociations(@CurrentUser() user: JwtPayload) {
+    return this.service.getMyAssociations(user.sub);
+  }
+
   @Get('stations/:stationId/reports')
   @ApiOperation({ summary: 'Get station condition report history' })
   getHistory(

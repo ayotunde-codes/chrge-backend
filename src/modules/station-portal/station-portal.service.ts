@@ -96,6 +96,23 @@ export class StationPortalService {
     };
   }
 
+  async getMyAssociations(userId: string) {
+    return this.prisma.stationAssociation.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        approvedAt: true,
+        station: {
+          select: { id: true, name: true, address: true, city: true, state: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async getHistory(userId: string, stationId: string, query: ReportHistoryQueryDto) {
     await this.assertApprovedStationAccess(userId, stationId);
     const where = { stationId };

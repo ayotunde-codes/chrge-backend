@@ -5,7 +5,7 @@ import { StationPortalService } from './station-portal.service';
 
 describe('StationPortalService', () => {
   const prisma = {
-    stationAssociation: { findFirst: jest.fn() },
+    stationAssociation: { findFirst: jest.fn(), findMany: jest.fn() },
     stationConditionReport: { findUnique: jest.fn() },
   };
   const service = new StationPortalService(prisma as unknown as PrismaService);
@@ -49,6 +49,17 @@ describe('StationPortalService', () => {
     prisma.stationAssociation.findFirst.mockResolvedValue(null);
 
     await expect(service.getMyStation('user-1')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('lists the signed-in representative own access requests', async () => {
+    prisma.stationAssociation.findMany.mockResolvedValue([{ id: 'association-1', status: 'PENDING' }]);
+
+    const result = await service.getMyAssociations('user-1');
+
+    expect(result).toEqual([{ id: 'association-1', status: 'PENDING' }]);
+    expect(prisma.stationAssociation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'user-1' },
+    }));
   });
 
   it('returns the original report for a retried idempotent submission', async () => {
