@@ -26,7 +26,11 @@ export class AdminCngReviewService {
   ) {
     const app = await this.prisma.cngApplication.findUnique({
       where: { id },
-      include: { documents: true },
+      include: {
+        documents: true,
+        installments: { orderBy: { number: 'asc' } },
+        reviewNotes: { orderBy: { createdAt: 'asc' } },
+      },
     });
     if (!app) throw new NotFoundException('CNG application not found');
     await this.audit.create(context, {
@@ -59,6 +63,13 @@ export class AdminCngReviewService {
         packageId: app.packageId,
         financingPlanId: app.financingPlanId,
         preferredLoanTenor: app.preferredLoanTenor,
+        repaymentTenure: app.preferredLoanTenor,
+        packagePriceNgn: app.packagePriceNgn,
+        depositAmountNgn: app.depositAmountNgn,
+        financedAmountNgn: app.financedAmountNgn,
+        interestAmountNgn: app.interestAmountNgn,
+        monthlyPaymentNgn: app.monthlyPaymentNgn,
+        totalCostNgn: app.totalCostNgn,
         monthlyIncome: app.monthlyIncome,
       },
       documents: app.documents.map((d) => ({
@@ -72,6 +83,28 @@ export class AdminCngReviewService {
       submittedAt: app.submittedAt,
       reviewedAt: app.reviewedAt,
       reviewNote: app.reviewNote,
+      reviewNotes: app.reviewNotes.map((note) => ({
+        id: note.id,
+        authorId: note.authorId,
+        note: note.note,
+        createdAt: note.createdAt,
+      })),
+      rejectionReason: app.rejectionReason,
+      workflow: {
+        inspectionAppointmentAt: app.inspectionAppointmentAt,
+        financingApprovedAt: app.financingApprovedAt,
+        conversionAppointmentAt: app.conversionAppointmentAt,
+        financeDisbursedAt: app.financeDisbursedAt,
+        conversionCompletedAt: app.conversionCompletedAt,
+        fullyPaidAt: app.fullyPaidAt,
+        installments: app.installments.map((installment) => ({
+          number: installment.number,
+          amountNgn: installment.amountNgn,
+          dueAt: installment.dueAt,
+          status: installment.status,
+          paidAt: installment.paidAt,
+        })),
+      },
       createdAt: app.createdAt,
       updatedAt: app.updatedAt,
     };

@@ -105,8 +105,21 @@ enum CngApplicationStatus {
   SUBMITTED
   UNDER_REVIEW
   APPROVED
+  INSPECTION_APPOINTMENT_BOOKED
+  FINANCING_APPROVED
+  CONVERSION_APPOINTMENT_BOOKED
+  FINANCE_DISBURSED
+  CONVERSION_COMPLETED
+  REPAYMENT_ACTIVE
+  FULLY_PAID
   REJECTED
   CANCELLED
+}
+
+enum CngInstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
 }
 
 // ============================================================================
@@ -642,6 +655,12 @@ model CngApplication {
   reviewedBy      String?
   reviewNote      String?
   rejectionReason String?
+  inspectionAppointmentAt DateTime?
+  financingApprovedAt DateTime?
+  conversionAppointmentAt DateTime?
+  financeDisbursedAt DateTime?
+  conversionCompletedAt DateTime?
+  fullyPaidAt DateTime?
   cancelledAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -650,6 +669,8 @@ model CngApplication {
   reviewer           User?                    @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
   documents          CngApplicationDocument[]
   phoneVerifications CngPhoneVerification[]
+  reviewNotes        CngApplicationReviewNote[]
+  installments       CngInstallment[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -657,6 +678,39 @@ model CngApplication {
   @@index([bvnHash])
   @@index([ninHash])
   @@map("cng_applications")
+}
+
+model CngApplicationReviewNote {
+  id            String   @id @default(uuid())
+  applicationId String
+  authorId      String
+  note          String
+  createdAt     DateTime @default(now())
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("cng_application_review_notes")
+}
+
+model CngInstallment {
+  id                String               @id @default(uuid())
+  applicationId     String
+  number            Int
+  amountNgn         Int
+  dueAt             DateTime
+  status            CngInstallmentStatus @default(PENDING)
+  paidAt            DateTime?
+  providerReference String?
+  webhookEventId    String?              @unique
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, number])
+  @@index([applicationId, status])
+  @@map("cng_installments")
 }
 
 model CngApplicationDocument {
