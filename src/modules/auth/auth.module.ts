@@ -22,6 +22,7 @@ import {
 import { StaffInvitationsService } from './staff-invitations.service';
 import { ResendEmailService } from './resend-email.service';
 import { UsersModule } from '../users/users.module';
+import { PasswordResetService } from './password-reset.service';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { UsersModule } from '../users/users.module';
     RolesGuard,
     StaffInvitationsService,
     ResendEmailService,
+    PasswordResetService,
   ],
   exports: [AuthService, JwtAuthGuard],
 })

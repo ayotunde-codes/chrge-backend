@@ -9,6 +9,14 @@ interface StaffInvitationEmail {
   invitationId: string;
 }
 
+interface PasswordResetEmail {
+  to: string;
+  firstName?: string | null;
+  code: string;
+  expiresAt: Date;
+  challengeId: string;
+}
+
 @Injectable()
 export class ResendEmailService {
   constructor(private readonly config: ConfigService) {}
@@ -73,6 +81,40 @@ export class ResendEmailService {
     if (!result?.id) {
       throw new ServiceUnavailableException('Resend returned an invalid delivery response');
     }
+    return { messageId: result.id };
+  }
+
+  async sendPasswordResetCode(message: PasswordResetEmail): Promise<{ messageId: string }> {
+    const apiKey = this.config.get<string>('RESEND_API_KEY')?.trim();
+    const from = this.config.get<string>('RESEND_FROM_EMAIL')?.trim();
+    if (!apiKey || !from) throw new ServiceUnavailableException('Transactional email is not configured');
+
+    const environment = this.config.get<string>('CHRGE_ENV')?.trim().toLowerCase() || 'development';
+    const isStaging = environment === 'staging';
+    const greeting = message.firstName ? `Hi ${message.firstName},` : 'Hello,';
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': `password-reset/${message.challengeId}`,
+      },
+      body: JSON.stringify({
+        from: `${isStaging ? 'CHRGE Staging' : 'CHRGE Team'} <${from}>`,
+        to: [message.to],
+        subject: `${isStaging ? '[STAGING] ' : ''}Your CHRGE password reset code`,
+        text: `${greeting}\n\nYour CHRGE password reset code is ${message.code}. It expires in 10 minutes.\n\nIf you did not request this, you can safely ignore this email.`,
+        html: `<!doctype html><html><body style="margin:0;background:#f4f7f4;color:#17211b;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:36px 20px"><div style="background:#fff;border:1px solid #dce6df;border-radius:16px;padding:30px"><p style="margin:0 0 10px;color:#087a50;font-size:12px;font-weight:800;letter-spacing:.08em">CHRGE${isStaging ? ' · STAGING' : ''}</p><h1 style="margin:0 0 16px;font-size:26px">Reset your password</h1><p style="line-height:1.6">${greeting} use this one-time code to reset your CHRGE password:</p><p style="margin:24px 0;font-size:36px;font-weight:800;letter-spacing:.18em;color:#087a50">${message.code}</p><p style="color:#65736b;font-size:13px;line-height:1.6">The code expires in 10 minutes. If you did not request a password reset, ignore this email.</p></div></div></body></html>`,
+        tags: [
+          { name: 'purpose', value: 'password_reset' },
+          { name: 'environment', value: environment },
+        ],
+      }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => null);
+    if (!response?.ok) throw new ServiceUnavailableException('Could not send the password reset email');
+    const result = (await response.json().catch(() => null)) as { id?: string } | null;
+    if (!result?.id) throw new ServiceUnavailableException('Email provider returned an invalid response');
     return { messageId: result.id };
   }
 }

@@ -192,6 +192,7 @@ model User {
   staffProfile            StaffProfile?
   staffInvitationsCreated StaffInvitation[]    @relation("StaffInviter")
   staffAuthChallenges     StaffAuthChallenge[]
+  passwordResetChallenges PasswordResetChallenge[]
   stationAssociations         StationAssociation[]  @relation("StationAssociationUser")
   approvedStationAssociations StationAssociation[]  @relation("StationAssociationApprover")
   stationConditionReports     StationConditionReport[] @relation("StationConditionReporter")
@@ -200,6 +201,22 @@ model User {
   @@index([email])
   @@index([providerId])
   @@map("users")
+}
+
+model PasswordResetChallenge {
+  id         String    @id @default(uuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("password_reset_challenges")
 }
 
 model RefreshToken {
