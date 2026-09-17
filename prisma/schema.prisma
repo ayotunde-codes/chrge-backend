@@ -122,6 +122,42 @@ enum CngInstallmentStatus {
   OVERDUE
 }
 
+enum CngAvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  UNKNOWN
+  TEMPORARILY_DISABLED
+}
+
+enum StationAssociationRole {
+  EMPLOYEE
+  MANAGER
+}
+
+enum StationAssociationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum StationConditionSource {
+  STATION_PORTAL
+  ADMIN
+}
+
+enum CngNotificationKind {
+  FAVORITE_STATION_AVAILABLE
+  NETWORK_DIGEST
+}
+
+enum CngNotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
 // ============================================================================
 // USER & AUTH
 // ============================================================================
@@ -156,6 +192,10 @@ model User {
   staffProfile            StaffProfile?
   staffInvitationsCreated StaffInvitation[]    @relation("StaffInviter")
   staffAuthChallenges     StaffAuthChallenge[]
+  stationAssociations         StationAssociation[]  @relation("StationAssociationUser")
+  approvedStationAssociations StationAssociation[]  @relation("StationAssociationApprover")
+  stationConditionReports     StationConditionReport[] @relation("StationConditionReporter")
+  stationAvailabilityEvents   StationAvailabilityEvent[] @relation("StationAvailabilityReporter")
 
   @@index([email])
   @@index([providerId])
@@ -458,18 +498,26 @@ model Station {
 
   // Tracking
   lastStatusUpdate DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
+  currentCngAvailability CngAvailabilityStatus @default(UNKNOWN)
+  currentQueueLength     Int?
+  currentPressureBar     Decimal?              @db.Decimal(6, 2)
+  cngStatusUpdatedAt     DateTime?
+  cngStatusUpdatedBy     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
 
   // Relations
-  network   Network?       @relation(fields: [networkId], references: [id])
-  submitter User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
-  reviewer  User?          @relation("ReviewedStations", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  ports     Port[]
-  favorites Favorite[]
-  reviews   Review[]
-  images    StationImage[]
+  network    Network?       @relation(fields: [networkId], references: [id])
+  submitter  User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
+  reviewer   User?          @relation("ReviewedStations", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  ports      Port[]
+  favorites  Favorite[]
+  reviews    Review[]
+  images     StationImage[]
+  associations       StationAssociation[]
+  conditionReports   StationConditionReport[]
+  availabilityEvents StationAvailabilityEvent[]
 
   @@index([networkId])
   @@index([latitude, longitude])
@@ -483,6 +531,86 @@ model Station {
   @@index([verificationTier])
   @@index([navigationReady])
   @@map("stations")
+}
+
+model StationAssociation {
+  id         String                   @id @default(uuid())
+  stationId  String
+  userId     String
+  role       StationAssociationRole   @default(EMPLOYEE)
+  status     StationAssociationStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+
+  station  Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  user     User    @relation("StationAssociationUser", fields: [userId], references: [id], onDelete: Cascade)
+  approver User?   @relation("StationAssociationApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@unique([stationId, userId])
+  @@index([userId, status])
+  @@index([stationId, status])
+  @@map("station_associations")
+}
+
+model StationConditionReport {
+  id                   String                 @id @default(uuid())
+  stationId            String
+  availability         CngAvailabilityStatus
+  estimatedQueueLength Int
+  pumpPressureBar      Decimal                @db.Decimal(6, 2)
+  reportedBy           String
+  source               StationConditionSource @default(STATION_PORTAL)
+  idempotencyKey       String
+  reportedAt           DateTime               @default(now())
+
+  station      Station               @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  reporter     User                  @relation("StationConditionReporter", fields: [reportedBy], references: [id], onDelete: Restrict)
+  notifications CngNotificationEvent[]
+
+  @@unique([reportedBy, idempotencyKey])
+  @@index([stationId, reportedAt(sort: Desc)])
+  @@map("station_condition_reports")
+}
+
+model StationAvailabilityEvent {
+  id         String                 @id @default(uuid())
+  stationId  String
+  status     CngAvailabilityStatus
+  startedAt  DateTime               @default(now())
+  endedAt    DateTime?
+  updatedBy  String
+  source     StationConditionSource @default(STATION_PORTAL)
+  createdAt  DateTime               @default(now())
+
+  station  Station @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  reporter User    @relation("StationAvailabilityReporter", fields: [updatedBy], references: [id], onDelete: Restrict)
+
+  @@index([stationId, startedAt(sort: Desc)])
+  @@index([stationId, endedAt])
+  @@map("station_availability_events")
+}
+
+model CngNotificationEvent {
+  id                String                @id @default(uuid())
+  conditionReportId String?
+  kind              CngNotificationKind
+  recipientScope    String
+  status            CngNotificationStatus @default(PENDING)
+  deduplicationKey  String                @unique
+  providerMessageId String?
+  attemptCount      Int                   @default(0)
+  lastError         String?
+  sentAt            DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  conditionReport StationConditionReport? @relation(fields: [conditionReportId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([conditionReportId])
+  @@map("cng_notification_events")
 }
 
 model Port {

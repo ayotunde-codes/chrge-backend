@@ -16,6 +16,7 @@ import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CngApplicationsModule } from './modules/cng-applications/cng-applications.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { StationPortalModule } from './modules/station-portal/station-portal.module';
 import { appConfig, validateEnv } from './config/app.config';
 
 @Module({
@@ -65,6 +66,7 @@ import { appConfig, validateEnv } from './config/app.config';
     HealthModule,
     AdminModule,
     CngApplicationsModule,
+    StationPortalModule,
   ],
   providers: [
     {
