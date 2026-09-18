@@ -147,6 +147,7 @@ enum StationConditionSource {
 }
 
 enum CngNotificationKind {
+  TEAM_STATUS_UPDATE
   FAVORITE_STATION_AVAILABLE
   NETWORK_DIGEST
 }

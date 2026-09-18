@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { CngAvailabilityStatus, Prisma, StationAssociationStatus, StationConditionSource } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StationPortalService } from './station-portal.service';
+import { CngEmailNotificationsService } from './cng-email-notifications.service';
 
 describe('StationPortalService', () => {
   const prisma = {
@@ -11,7 +12,11 @@ describe('StationPortalService', () => {
     stationConditionReport: { findUnique: jest.fn() },
     $transaction: jest.fn(),
   };
-  const service = new StationPortalService(prisma as unknown as PrismaService);
+  const notifications = { deliverReportNotifications: jest.fn() };
+  const service = new StationPortalService(
+    prisma as unknown as PrismaService,
+    notifications as unknown as CngEmailNotificationsService,
+  );
 
   afterEach(() => jest.clearAllMocks());
 

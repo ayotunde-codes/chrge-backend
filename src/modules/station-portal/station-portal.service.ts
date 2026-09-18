@@ -20,10 +20,14 @@ import {
   RequestStationAssociationDto,
   SubmitStationConditionDto,
 } from './dto/station-portal.dto';
+import { CngEmailNotificationsService } from './cng-email-notifications.service';
 
 @Injectable()
 export class StationPortalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: CngEmailNotificationsService,
+  ) {}
 
   async listEligibleStations(dto: ListEligibleStationsDto) {
     const where: Prisma.StationWhereInput = {
@@ -235,7 +239,7 @@ export class StationPortalService {
     });
     if (existing) return { changed: true, duplicate: true, report: this.mapReport(existing) };
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "stations" WHERE "id" = ${stationId} FOR UPDATE`;
       const station = await tx.station.findUnique({ where: { id: stationId } });
       if (!station || !station.isActive || station.deletedAt) {
@@ -293,6 +297,15 @@ export class StationPortalService {
         },
       });
 
+      await tx.cngNotificationEvent.create({
+        data: {
+          conditionReportId: report.id,
+          kind: 'TEAM_STATUS_UPDATE',
+          recipientScope: 'team',
+          deduplicationKey: `team-status:${report.id}`,
+        },
+      });
+
       if (availabilityChanged && availability === CngAvailabilityStatus.AVAILABLE) {
         await tx.cngNotificationEvent.create({
           data: {
@@ -311,6 +324,10 @@ export class StationPortalService {
         station: this.mapStation(updatedStation),
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    if (result.changed && !result.duplicate && result.report?.id) {
+      return { ...result, notifications: await this.notifications.deliverReportNotifications(result.report.id) };
+    }
+    return result;
   }
 
   async listAssociations(status?: StationAssociationStatus) {
