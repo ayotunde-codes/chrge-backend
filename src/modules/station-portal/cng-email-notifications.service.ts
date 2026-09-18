@@ -33,7 +33,7 @@ export class CngEmailNotificationsService {
     if (teamEvent) {
       try {
         const result = await this.email.sendCngTeamStatusUpdate({
-          to: this.config.get<string>('CNG_TEAM_NOTIFICATION_EMAIL')?.trim() || 'team@gocharge.com',
+          to: this.config.get<string>('CNG_TEAM_NOTIFICATION_EMAIL')?.trim() || 'team@gochrge.com',
           reportId,
           reporter,
           station,

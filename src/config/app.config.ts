@@ -67,6 +67,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CNG_TEAM_NOTIFICATION_EMAIL: string = 'team@gochrge.com';
+
+  @IsString()
+  @IsOptional()
   REDIS_URL: string = 'redis://localhost:6379';
 
   @IsString()

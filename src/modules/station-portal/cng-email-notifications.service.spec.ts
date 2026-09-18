@@ -12,7 +12,7 @@ describe('CngEmailNotificationsService', () => {
     user: { findMany: jest.fn() },
     cngNotificationEvent: { create: jest.fn(), update: jest.fn() },
   };
-  const config = { get: jest.fn((name: string) => name === 'CNG_TEAM_NOTIFICATION_EMAIL' ? 'team@gocharge.com' : undefined) };
+  const config = { get: jest.fn((name: string) => name === 'CNG_TEAM_NOTIFICATION_EMAIL' ? 'team@gochrge.com' : undefined) };
   const email = {
     sendCngTeamStatusUpdate: jest.fn(),
     sendFavoriteStationAvailable: jest.fn(),
@@ -45,7 +45,7 @@ describe('CngEmailNotificationsService', () => {
     });
     const result = await service.deliverReportNotifications('report-1');
     expect(email.sendCngTeamStatusUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      to: 'team@gocharge.com', reportId: 'report-1', station: expect.objectContaining({ queueLength: 3, pressureBar: 200 }),
+      to: 'team@gochrge.com', reportId: 'report-1', station: expect.objectContaining({ queueLength: 3, pressureBar: 200 }),
     }));
     expect(prisma.cngNotificationEvent.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'team-event' }, data: expect.objectContaining({ status: CngNotificationStatus.SENT }),
