@@ -31,7 +31,9 @@
     "prisma:seed:catalog": "ts-node prisma/seed-catalog.ts",
     "prisma:seed:catalog:prod": "node dist/prisma/seed-catalog.js",
     "prisma:reset": "prisma migrate reset --force",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "admin:bootstrap": "ts-node scripts/bootstrap-admin.ts",
+    "admin:prepare-mfa": "ts-node scripts/prepare-admin-mfa.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
@@ -91,6 +93,9 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "multer": "2.3.0"
   },
   "jest": {
     "moduleFileExtensions": [

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -13,6 +14,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -27,7 +29,7 @@ import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.de
 import { NearbyStationsDto } from './dto/nearby-stations.dto';
 import { AllStationsDto } from './dto/all-stations.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
-import { SubmitStationDto } from './dto/submit-station.dto';
+import { AmendStationSubmissionDto, SubmitStationDto } from './dto/submit-station.dto';
 import {
   StationCardResponseDto,
   StationDetailResponseDto,
@@ -118,9 +120,7 @@ export class StationsController {
       limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
     }),
   )
-  async uploadImage(
-    @UploadedFile() file: Express.Multer.File,
-  ): Promise<{ url: string }> {
+  async uploadImage(@UploadedFile() file: Express.Multer.File): Promise<{ url: string }> {
     if (!file) throw new BadRequestException('No image file provided');
     const baseUrl = process.env.API_BASE_URL ?? 'http://localhost:3001';
     return { url: `${baseUrl}/uploads/stations/${file.filename}` };
@@ -130,13 +130,52 @@ export class StationsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Submit a new charging station' })
-  @ApiResponse({ status: 201, type: StationDetailResponseDto, description: 'Station submitted successfully' })
+  @ApiResponse({
+    status: 201,
+    type: StationDetailResponseDto,
+    description: 'Station submitted successfully',
+  })
   async submitStation(
     @CurrentUser() user: JwtPayload,
     @Body() dto: SubmitStationDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<StationDetailResponseDto> {
-    const station = await this.stationsService.submitStation(user.sub, dto);
+    if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException('Invalid Idempotency-Key header');
+    }
+    const station = await this.stationsService.submitStation(user.sub, dto, idempotencyKey);
     return station as unknown as StationDetailResponseDto;
+  }
+
+  @Get('my-submissions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async getMySubmission(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Record<string, unknown>> {
+    return this.stationsService.getOwnedSubmission(user.sub, id);
+  }
+
+  @Patch('my-submissions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async amendMySubmission(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AmendStationSubmissionDto,
+  ): Promise<Record<string, unknown>> {
+    return this.stationsService.amendOwnedSubmission(user.sub, id, dto);
+  }
+
+  @Post('my-submissions/:id/withdraw')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async withdrawMySubmission(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Record<string, unknown>> {
+    return this.stationsService.withdrawOwnedSubmission(user.sub, id);
   }
 
   @Get('my-submissions')
@@ -149,6 +188,18 @@ export class StationsController {
   ): Promise<{ stations: StationCardResponseDto[]; nextCursor: null }> {
     const stations = await this.stationsService.getMySubmissions(user.sub);
     return { stations: stations as unknown as StationCardResponseDto[], nextCursor: null };
+  }
+
+  @Delete('my-submissions/:id')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Withdraw the current user's pending or rejected station submission" })
+  async withdrawSubmission(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.stationsService.withdrawSubmission(user.sub, id);
   }
 
   @Get('identity/preview')
@@ -184,18 +235,19 @@ export class StationsController {
   @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get reviews for a station' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Default 10' })
-  @ApiQuery({ name: 'cursor', required: false, type: String, description: 'Cursor for pagination (ISO date)' })
+  @ApiQuery({
+    name: 'cursor',
+    required: false,
+    type: String,
+    description: 'Cursor for pagination (ISO date)',
+  })
   @ApiResponse({ status: 200, type: ReviewListResponseDto })
   async getReviews(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('limit') limit?: number,
     @Query('cursor') cursor?: string,
   ): Promise<ReviewListResponseDto> {
-    const { reviews, nextCursor } = await this.stationsService.getReviews(
-      id,
-      limit || 10,
-      cursor,
-    );
+    const { reviews, nextCursor } = await this.stationsService.getReviews(id, limit || 10, cursor);
     return {
       reviews: reviews as unknown as ReviewResponseDto[],
       nextCursor,
@@ -206,14 +258,20 @@ export class StationsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create or update a review for a station' })
-  @ApiResponse({ status: 201, description: 'Review saved' })
+  @ApiResponse({ status: 201, type: ReviewResponseDto, description: 'Review saved' })
   async createReview(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateReviewDto,
-  ): Promise<{ message: string; reviewId: string }> {
+  ): Promise<ReviewResponseDto> {
     const review = await this.stationsService.createReview(user.sub, id, dto);
-    return { message: 'Review saved successfully', reviewId: review.id };
+    return {
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.createdAt,
+      anonHandle: review.anonHandle ?? this.stationsService.getIdentityPreview().examples[0],
+    };
   }
 
   @Post(':id/favorite')

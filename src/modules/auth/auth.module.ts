@@ -10,7 +10,19 @@ import { TokenService } from './token.service';
 import { GoogleAuthService } from './google-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { StaffAuthController } from './staff-auth.controller';
+import { StaffAuthService } from './staff-auth.service';
+import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import {
+  StaffAccountsController,
+  StaffInvitationEnrollmentController,
+  StaffInvitationsController,
+} from './staff-invitations.controller';
+import { StaffInvitationsService } from './staff-invitations.service';
+import { ResendEmailService } from './resend-email.service';
 import { UsersModule } from '../users/users.module';
+import { PasswordResetService } from './password-reset.service';
 
 @Module({
   imports: [
@@ -36,8 +48,26 @@ import { UsersModule } from '../users/users.module';
       },
     ]),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, TokenService, GoogleAuthService, JwtStrategy, JwtAuthGuard],
-  exports: [AuthService, JwtAuthGuard],
+  controllers: [
+    AuthController,
+    StaffAuthController,
+    StaffAccountsController,
+    StaffInvitationsController,
+    StaffInvitationEnrollmentController,
+  ],
+  providers: [
+    AuthService,
+    StaffAuthService,
+    TokenService,
+    GoogleAuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    StaffAccessGuard,
+    RolesGuard,
+    StaffInvitationsService,
+    ResendEmailService,
+    PasswordResetService,
+  ],
+  exports: [AuthService, JwtAuthGuard, ResendEmailService],
 })
 export class AuthModule {}

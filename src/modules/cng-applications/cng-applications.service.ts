@@ -6,18 +6,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CngApplicationDocument, CngApplicationStatus, Prisma } from '@prisma/client';
+import {
+  CngApplicationDocument,
+  CngApplicationStatus,
+  DocumentScanStatus,
+  Prisma,
+} from '@prisma/client';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import { basename } from 'path';
 import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  AdvanceCngWorkflowDto,
   AdminCngApplicationQueryDto,
+  CngRepaymentWebhookDto,
   RequestPhoneVerificationDto,
   ReviewCngApplicationDto,
   SaveFinancingDetailsDto,
   SavePersonalDetailsDto,
   SaveVehicleDetailsDto,
+  SubmitCngReviewNoteDto,
   VerifyPhoneDto,
 } from './dto/cng-application.dto';
 import {
@@ -35,6 +43,10 @@ import { DocumentStorageService } from './document-storage.service';
 
 type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
   include: { documents: true };
+}>;
+
+type ApplicationWithWorkflow = Prisma.CngApplicationGetPayload<{
+  include: { documents: true; installments: true };
 }>;
 
 @Injectable()
@@ -92,7 +104,12 @@ export class CngApplicationsService {
   }
 
   async getApplication(id: string): Promise<Record<string, unknown>> {
-    return this.mapApplication(await this.getApplicationRecord(id));
+    const application = await this.prisma.cngApplication.findUnique({
+      where: { id },
+      include: { documents: true, installments: { orderBy: { number: 'asc' } } },
+    });
+    if (!application) throw new NotFoundException('CNG application not found');
+    return this.mapApplication(application);
   }
 
   async getMyApplications(userId: string): Promise<Record<string, unknown>[]> {
@@ -295,10 +312,6 @@ export class CngApplicationsService {
     const plan = CNG_FINANCING_PLANS[dto.financingPlanId];
     const packageDetails = CNG_PACKAGES[dto.packageId];
 
-    if (dto.financingPlanId !== CngFinancingPlan.Full && !dto.preferredLoanTenor) {
-      throw new BadRequestException('Preferred loan tenor is required for financed plans');
-    }
-
     const depositAmountNgn = Math.round(packageDetails.priceNgn * (plan.depositPct / 100));
     const financedAmountNgn = packageDetails.priceNgn - depositAmountNgn;
     const interestAmountNgn = Math.round(packageDetails.priceNgn * plan.interestRate);
@@ -312,8 +325,7 @@ export class CngApplicationsService {
       data: {
         packageId: dto.packageId,
         financingPlanId: dto.financingPlanId,
-        preferredLoanTenor:
-          dto.financingPlanId === CngFinancingPlan.Full ? null : dto.preferredLoanTenor,
+        preferredLoanTenor: plan.tenure,
         packagePriceNgn: packageDetails.priceNgn,
         depositAmountNgn,
         financedAmountNgn,
@@ -358,6 +370,15 @@ export class CngApplicationsService {
       where: { applicationId_type: { applicationId: id, type } },
     });
     const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const signatureClearedForStaging =
+      process.env.CHRGE_ENV === 'staging' &&
+      process.env.CNG_DOCUMENT_SCAN_MODE === 'signature-only';
+    const scanStatus = signatureClearedForStaging
+      ? DocumentScanStatus.CLEAN
+      : DocumentScanStatus.PENDING;
+    const scanMetadata = signatureClearedForStaging
+      ? { scanStatus, scannedAt: new Date(), scannerVersion: 'signature-only-v1' }
+      : { scanStatus, scannedAt: null, scannerVersion: null };
     await this.documentStorage.putObject(storageKey, file.buffer, file.mimetype);
 
     let document: CngApplicationDocument;
@@ -372,6 +393,7 @@ export class CngApplicationsService {
           mimeType: file.mimetype,
           sizeBytes: file.size,
           checksumSha256,
+          ...scanMetadata,
         },
         update: {
           originalName: basename(file.originalname),
@@ -380,6 +402,7 @@ export class CngApplicationsService {
           sizeBytes: file.size,
           checksumSha256,
           uploadedAt: new Date(),
+          ...scanMetadata,
         },
       });
     } catch (error) {
@@ -521,12 +544,24 @@ export class CngApplicationsService {
     dto: ReviewCngApplicationDto,
   ): Promise<Record<string, unknown>> {
     const application = await this.getApplicationRecord(id);
-    const reviewableStatuses: CngApplicationStatus[] = [
+    const rejectableStatuses: CngApplicationStatus[] = [
       CngApplicationStatus.SUBMITTED,
       CngApplicationStatus.UNDER_REVIEW,
+      CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
+      CngApplicationStatus.FINANCING_APPROVED,
+      CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
     ];
-    if (!reviewableStatuses.includes(application.status)) {
-      throw new ConflictException('Only submitted applications can be reviewed');
+    if (
+      dto.status === CngApplicationStatus.UNDER_REVIEW &&
+      application.status !== CngApplicationStatus.SUBMITTED
+    ) {
+      throw new ConflictException('Only submitted applications can start review');
+    }
+    if (
+      dto.status === CngApplicationStatus.REJECTED &&
+      !rejectableStatuses.includes(application.status)
+    ) {
+      throw new ConflictException('Applications cannot be rejected after finance is disbursed');
     }
     if (dto.status === CngApplicationStatus.REJECTED && !dto.rejectionReason) {
       throw new BadRequestException('rejectionReason is required when rejecting an application');
@@ -538,13 +573,139 @@ export class CngApplicationsService {
         status: dto.status,
         reviewedBy: reviewerId,
         reviewedAt: new Date(),
-        reviewNote: dto.reviewNote || null,
+        reviewNote: dto.reviewNote || application.reviewNote,
         rejectionReason: dto.status === CngApplicationStatus.REJECTED ? dto.rejectionReason : null,
       },
       include: { documents: true },
     });
 
     return this.mapApplication(updated);
+  }
+
+  async submitReviewNote(id: string, authorId: string, dto: SubmitCngReviewNoteDto) {
+    const application = await this.getApplicationRecord(id);
+    if (
+      application.status === CngApplicationStatus.REJECTED ||
+      application.status === CngApplicationStatus.CANCELLED
+    ) {
+      throw new ConflictException('Notes cannot be added to a closed application');
+    }
+    await this.prisma.cngApplicationReviewNote.create({
+      data: { applicationId: id, authorId, note: dto.note.trim() },
+    });
+    return { saved: true };
+  }
+
+  async advanceWorkflow(id: string, dto: AdvanceCngWorkflowDto) {
+    const application = await this.getApplicationRecord(id);
+    const nextStatus: Partial<Record<CngApplicationStatus, CngApplicationStatus>> = {
+      [CngApplicationStatus.UNDER_REVIEW]: CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
+      [CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED]: CngApplicationStatus.FINANCING_APPROVED,
+      [CngApplicationStatus.FINANCING_APPROVED]: CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+      [CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED]: CngApplicationStatus.FINANCE_DISBURSED,
+      [CngApplicationStatus.FINANCE_DISBURSED]: CngApplicationStatus.CONVERSION_COMPLETED,
+    };
+    if (nextStatus[application.status] !== dto.status) {
+      throw new ConflictException(
+        `Expected ${nextStatus[application.status] ?? 'no further manual status'} next`,
+      );
+    }
+
+    const now = new Date();
+    const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : now;
+    const timestampData: Prisma.CngApplicationUpdateInput = {};
+    if (dto.status === CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED)
+      timestampData.inspectionAppointmentAt = scheduledAt;
+    if (dto.status === CngApplicationStatus.FINANCING_APPROVED)
+      timestampData.financingApprovedAt = now;
+    if (dto.status === CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED)
+      timestampData.conversionAppointmentAt = scheduledAt;
+    if (dto.status === CngApplicationStatus.FINANCE_DISBURSED)
+      timestampData.financeDisbursedAt = now;
+    if (dto.status === CngApplicationStatus.CONVERSION_COMPLETED) {
+      timestampData.conversionCompletedAt = now;
+      if (!application.preferredLoanTenor) timestampData.fullyPaidAt = now;
+    }
+
+    const tenure = application.preferredLoanTenor ?? 0;
+    if (
+      dto.status === CngApplicationStatus.FINANCE_DISBURSED &&
+      tenure > 0 &&
+      application.monthlyPaymentNgn
+    ) {
+      await this.prisma.cngInstallment.createMany({
+        data: Array.from({ length: tenure }, (_, index) => ({
+          applicationId: id,
+          number: index + 1,
+          amountNgn: application.monthlyPaymentNgn!,
+          dueAt: new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + index + 1, now.getUTCDate()),
+          ),
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return this.mapApplication(
+      await this.prisma.cngApplication.update({
+        where: { id },
+        data: {
+          status:
+            dto.status === CngApplicationStatus.CONVERSION_COMPLETED && !tenure
+              ? CngApplicationStatus.FULLY_PAID
+              : dto.status,
+          ...timestampData,
+        },
+        include: { documents: true },
+      }),
+    );
+  }
+
+  async recordInstallmentPayment(dto: CngRepaymentWebhookDto) {
+    const previouslyProcessed = await this.prisma.cngInstallment.findUnique({
+      where: { webhookEventId: dto.eventId },
+    });
+    if (previouslyProcessed) return { accepted: true, duplicate: true };
+
+    const application = await this.prisma.cngApplication.findUnique({
+      where: { reference: dto.applicationReference },
+      include: { installments: true },
+    });
+    if (!application) throw new NotFoundException('CNG application not found');
+    const repayableStatuses: CngApplicationStatus[] = [
+      CngApplicationStatus.CONVERSION_COMPLETED,
+      CngApplicationStatus.REPAYMENT_ACTIVE,
+    ];
+    if (!repayableStatuses.includes(application.status)) {
+      throw new ConflictException('Repayments can only be recorded after conversion is completed');
+    }
+    const installment = application.installments.find(
+      (item) => item.number === dto.installmentNumber,
+    );
+    if (!installment) throw new NotFoundException('Installment not found');
+    if (installment.amountNgn !== dto.amountNgn)
+      throw new BadRequestException('Installment amount does not match');
+    if (installment.status === 'PAID') return { accepted: true, duplicate: true };
+
+    await this.prisma.cngInstallment.update({
+      where: { id: installment.id },
+      data: {
+        status: 'PAID',
+        paidAt: new Date(dto.paidAt),
+        providerReference: dto.providerReference,
+        webhookEventId: dto.eventId,
+      },
+    });
+    const paidCount = application.installments.filter((item) => item.status === 'PAID').length + 1;
+    const fullyPaid = paidCount === application.installments.length;
+    await this.prisma.cngApplication.update({
+      where: { id: application.id },
+      data: {
+        status: fullyPaid ? CngApplicationStatus.FULLY_PAID : CngApplicationStatus.REPAYMENT_ACTIVE,
+        fullyPaidAt: fullyPaid ? new Date(dto.paidAt) : null,
+      },
+    });
+    return { accepted: true, duplicate: false, fullyPaid, installmentsPaid: paidCount };
   }
 
   private async getApplicationRecord(id: string): Promise<ApplicationWithDocuments> {
@@ -564,7 +725,9 @@ export class CngApplicationsService {
     return application;
   }
 
-  private mapApplication(application: ApplicationWithDocuments): Record<string, unknown> {
+  private mapApplication(
+    application: ApplicationWithDocuments | ApplicationWithWorkflow,
+  ): Record<string, unknown> {
     const uploadedTypes = new Set(application.documents.map((document) => document.type));
     const missingRequiredDocuments = REQUIRED_CNG_DOCUMENT_TYPES.filter(
       (type) => !uploadedTypes.has(type),
@@ -617,7 +780,7 @@ export class CngApplicationsService {
       ? {
           packageId: application.packageId,
           financingPlanId: application.financingPlanId,
-          preferredLoanTenor: application.preferredLoanTenor,
+          repaymentTenure: application.preferredLoanTenor,
           packagePriceNgn: application.packagePriceNgn,
           depositAmountNgn: application.depositAmountNgn,
           financedAmountNgn: application.financedAmountNgn,
@@ -649,6 +812,24 @@ export class CngApplicationsService {
       reviewedAt: application.reviewedAt,
       reviewNote: application.reviewNote,
       rejectionReason: application.rejectionReason,
+      workflow: {
+        inspectionAppointmentAt: application.inspectionAppointmentAt,
+        financingApprovedAt: application.financingApprovedAt,
+        conversionAppointmentAt: application.conversionAppointmentAt,
+        financeDisbursedAt: application.financeDisbursedAt,
+        conversionCompletedAt: application.conversionCompletedAt,
+        fullyPaidAt: application.fullyPaidAt,
+        installments:
+          'installments' in application
+            ? application.installments.map((installment) => ({
+                number: installment.number,
+                amountNgn: installment.amountNgn,
+                dueAt: installment.dueAt,
+                status: installment.status,
+                paidAt: installment.paidAt,
+              }))
+            : [],
+      },
       createdAt: application.createdAt,
       updatedAt: application.updatedAt,
     };
@@ -663,6 +844,7 @@ export class CngApplicationsService {
       mimeType: document.mimeType,
       sizeBytes: document.sizeBytes,
       required: config?.required ?? false,
+      scanStatus: document.scanStatus,
       uploadedAt: document.uploadedAt,
     };
   }
@@ -678,15 +860,17 @@ export class CngApplicationsService {
       reference: application.reference,
       status: application.status,
       applicant: {
-        firstName: application.firstName,
-        lastName: application.lastName,
+        displayName: [application.firstName, application.lastName]
+          .filter(Boolean)
+          .map((value) => `${value?.slice(0, 1)}•••`)
+          .join(' '),
         email: application.email,
-        phone: application.phone,
+        phone: application.phone ? `••••••${application.phone.slice(-4)}` : null,
       },
       vehicle: {
         brand: application.vehicleBrand,
         model: application.vehicleModel,
-        licensePlate: application.licensePlate,
+        licensePlate: application.licensePlate ? `••••${application.licensePlate.slice(-4)}` : null,
       },
       financing: {
         packageId: application.packageId,

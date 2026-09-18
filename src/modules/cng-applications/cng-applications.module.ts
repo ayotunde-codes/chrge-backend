@@ -7,16 +7,27 @@ import { CngApplicationAccessGuard } from './cng-application-access.guard';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
+import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
+import { AdminCngReviewService } from './admin-cng-review.service';
+import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
+import { CngRepaymentWebhookController } from './cng-repayment-webhook.controller';
 
 @Module({
   imports: [ConfigModule],
-  controllers: [CngApplicationsController, AdminCngApplicationsController],
+  controllers: [
+    CngApplicationsController,
+    AdminCngApplicationsController,
+    CngRepaymentWebhookController,
+  ],
   providers: [
     CngApplicationsService,
     CngApplicationAccessGuard,
     SensitiveDataService,
     OtpDeliveryService,
     DocumentStorageService,
+    StaffAccessGuard,
+    AdminCngReviewService,
+    AdminAuditInterceptor,
   ],
   exports: [CngApplicationsService],
 })

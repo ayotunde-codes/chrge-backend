@@ -1,7 +1,15 @@
-import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { Station, Favorite, Review, ConnectorType, PortStatus, Prisma, StationType } from '@prisma/client';
+import {
+  Station,
+  Favorite,
+  Review,
+  ConnectorType,
+  PortStatus,
+  Prisma,
+  StationType,
+} from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
@@ -13,21 +21,17 @@ import { SubmitStationDto } from './dto/submit-station.dto';
 
 const TTL_5_MIN = 5 * 60 * 1000;
 
-type StationDetail = Prisma.StationGetPayload<{
-  include: {
-    network: { select: { id: true; name: true; logoUrl: true; website: true; phoneNumber: true } };
-    ports: { orderBy: { portNumber: 'asc' } };
-    images: { orderBy: { sortOrder: 'asc' } };
-  };
-}>;
-
 // Operating hours structure
 interface DayHours {
   open: string; // "08:00" or "24h"
   close: string; // "22:00" or "24h"
 }
 
+type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
 interface OperatingHours {
+  status?: 'UNVERIFIED';
+  label?: string;
   mon?: DayHours;
   tue?: DayHours;
   wed?: DayHours;
@@ -54,6 +58,18 @@ interface CngDetails {
   paymentMethods?: string[];
   availabilityStatus?: string;
   safetyCertification?: string;
+}
+
+interface CngStatusResult {
+  availability: 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
+  estimatedQueueLength: number | null;
+  pumpPressureBar: number | null;
+  updatedAt: Date | string | null;
+}
+
+interface ResearchSourceLink {
+  kind: string;
+  url: string;
 }
 
 @Injectable()
@@ -88,48 +104,18 @@ export class StationsService {
       userConnector = await this.vehiclesService.getPrimaryVehicleConnector(userId);
     }
 
-    // Build where clause
-    const where: Prisma.StationWhereInput = {
-      isActive: true,
-      deletedAt: null,
-    };
-
-    // Connector filtering
-    const connectorFilter = dto.connectors?.length
-      ? dto.connectors
-      : userConnector
-        ? [userConnector]
-        : null;
-
-    if (connectorFilter) {
-      where.ports = {
-        some: {
-          connectorType: { in: connectorFilter },
-        },
-      };
-    }
-
-    // Status filtering
-    if (dto.status?.length) {
-      where.ports = {
-        ...where.ports,
-        some: {
-          ...((where.ports as Prisma.PortListRelationFilter)?.some || {}),
-          status: { in: dto.status },
-        },
-      };
-    }
-
-    // Power filtering
-    if (dto.minPowerKw) {
-      where.ports = {
-        ...where.ports,
-        some: {
-          ...((where.ports as Prisma.PortListRelationFilter)?.some || {}),
-          powerKw: { gte: dto.minPowerKw },
-        },
-      };
-    }
+    // A vehicle connector should not hide CNG results, which do not have EV ports.
+    const connectorFilter =
+      dto.stationType === StationType.CNG
+        ? null
+        : dto.connectors?.length
+          ? dto.connectors
+          : userConnector
+            ? [userConnector]
+            : null;
+    const hasPortFilter =
+      dto.stationType !== StationType.CNG &&
+      Boolean(connectorFilter?.length || dto.status?.length || dto.minPowerKw);
 
     // Fetch stations with Haversine distance calculation
     // Using raw query for distance ordering
@@ -139,6 +125,20 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."operatorName" as operator_name,
+        s."serviceType" as service_type,
+        s."locationAccuracy" as location_accuracy,
+        s."navigationReady" as navigation_ready,
+        s."priceNote" as price_note,
+        s."openingHoursNote" as opening_hours_note,
+        s."accessNotes" as access_notes,
+        s."operationalStatus" as operational_status,
+        s."verificationTier" as verification_tier,
+        s."verificationConfidence" as verification_confidence,
+        s."verificationBasis" as verification_basis,
+        s."verifiedAt" as verified_at,
+        s."sourceLinks" as source_links,
+        s."researchMetadata" as research_metadata,
         s."stationType" as station_type,
         s.address,
         s.area,
@@ -155,6 +155,10 @@ export class StationsService {
         s.amenities,
         s.pricing,
         s."cngDetails" as cng_details,
+        s."currentCngAvailability" as current_cng_availability,
+        s."currentQueueLength" as current_queue_length,
+        s."currentPressureBar" as current_pressure_bar,
+        s."cngStatusUpdatedAt" as cng_status_updated_at,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -172,8 +176,24 @@ export class StationsService {
         ) AS distance_km
       FROM stations s
       WHERE s."isActive" = true
+        AND s.status = 'APPROVED'
         AND s."deletedAt" IS NULL
         ${dto.stationType ? Prisma.sql`AND s."stationType" = CAST(${dto.stationType} AS "StationType")` : Prisma.sql``}
+        ${
+          hasPortFilter
+            ? Prisma.sql`AND (
+                s."stationType" IN ('CNG', 'HYBRID')
+                OR EXISTS (
+                  SELECT 1
+                  FROM ports p
+                  WHERE p."stationId" = s.id
+                    ${connectorFilter?.length ? Prisma.sql`AND p."connectorType"::text IN (${Prisma.join(connectorFilter)})` : Prisma.sql``}
+                    ${dto.status?.length ? Prisma.sql`AND p.status::text IN (${Prisma.join(dto.status)})` : Prisma.sql``}
+                    ${dto.minPowerKw ? Prisma.sql`AND p."powerKw" >= ${dto.minPowerKw}` : Prisma.sql``}
+                )
+              )`
+            : Prisma.sql``
+        }
         AND (
           6371 * acos(
             cos(radians(${dto.lat})) * cos(radians(s.latitude)) *
@@ -181,7 +201,13 @@ export class StationsService {
             sin(radians(${dto.lat})) * sin(radians(s.latitude))
           )
         ) <= ${radiusKm}
-      ORDER BY distance_km ASC
+      ORDER BY
+        CASE
+          WHEN s."stationType" = 'CNG' THEN 0
+          WHEN s."stationType" = 'HYBRID' THEN 1
+          ELSE 2
+        END ASC,
+        distance_km ASC
       LIMIT ${limit + 1}
       ${dto.cursor ? Prisma.sql`OFFSET ${parseInt(dto.cursor, 10)}` : Prisma.sql``}
     `;
@@ -250,10 +276,17 @@ export class StationsService {
   // TOP PICKS (curated ranking)
   // ============================================================================
 
-  async findTopPicks(lat: number, lng: number, userId?: string, limit = 4): Promise<StationCardResult[]> {
+  async findTopPicks(
+    lat: number,
+    lng: number,
+    userId?: string,
+    limit = 4,
+  ): Promise<StationCardResult[]> {
     // Round to 2dp (~1km precision) so nearby users share the same cache entry
-    const cacheKey = `stations:top-picks:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
-    const cached = await this.cache.get<StationCardResult[]>(cacheKey);
+    const cacheVersion = (await this.cache.get<number>('stations:top-picks:version')) ?? 0;
+    const cacheKey = `stations:top-picks:v${cacheVersion}:${lat.toFixed(2)}:${lng.toFixed(2)}:${limit}`;
+    // Favorite state is user-specific and must never enter the shared cache.
+    const cached = userId ? undefined : await this.cache.get<StationCardResult[]>(cacheKey);
     if (cached) return cached;
 
     // Fetch stations with scoring heuristic:
@@ -268,6 +301,20 @@ export class StationsService {
         s.id,
         s.name,
         s.description,
+        s."operatorName" as operator_name,
+        s."serviceType" as service_type,
+        s."locationAccuracy" as location_accuracy,
+        s."navigationReady" as navigation_ready,
+        s."priceNote" as price_note,
+        s."openingHoursNote" as opening_hours_note,
+        s."accessNotes" as access_notes,
+        s."operationalStatus" as operational_status,
+        s."verificationTier" as verification_tier,
+        s."verificationConfidence" as verification_confidence,
+        s."verificationBasis" as verification_basis,
+        s."verifiedAt" as verified_at,
+        s."sourceLinks" as source_links,
+        s."researchMetadata" as research_metadata,
         s."stationType" as station_type,
         s.address,
         s.area,
@@ -284,6 +331,10 @@ export class StationsService {
         s.amenities,
         s.pricing,
         s."cngDetails" as cng_details,
+        s."currentCngAvailability" as current_cng_availability,
+        s."currentQueueLength" as current_queue_length,
+        s."currentPressureBar" as current_pressure_bar,
+        s."cngStatusUpdatedAt" as cng_status_updated_at,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -301,6 +352,7 @@ export class StationsService {
         ) AS distance_km,
         (
           CASE WHEN s."isVerified" THEN 20 ELSE 0 END +
+          CASE WHEN s."navigationReady" THEN 20 ELSE 0 END +
           CASE WHEN s."availablePorts" > 0 THEN 15 ELSE 0 END +
           COALESCE(s."avgRating", 0) * 5 +
           (10 - LEAST(10, (
@@ -313,6 +365,7 @@ export class StationsService {
         ) AS score
       FROM stations s
       WHERE s."isActive" = true
+        AND s.status = 'APPROVED'
         AND s."deletedAt" IS NULL
         AND (
           6371 * acos(
@@ -321,7 +374,14 @@ export class StationsService {
             sin(radians(${lat})) * sin(radians(s.latitude))
           )
         ) <= 25
-      ORDER BY score DESC, distance_km ASC
+      ORDER BY
+        CASE
+          WHEN s."stationType" = 'CNG' THEN 0
+          WHEN s."stationType" = 'HYBRID' THEN 1
+          ELSE 2
+        END ASC,
+        score DESC,
+        distance_km ASC
       LIMIT ${limit}
     `;
 
@@ -360,7 +420,7 @@ export class StationsService {
       );
     });
 
-    await this.cache.set(cacheKey, result, TTL_5_MIN);
+    if (!userId) await this.cache.set(cacheKey, result, TTL_5_MIN);
     return result;
   }
 
@@ -378,6 +438,7 @@ export class StationsService {
     // Build Prisma where clause
     const where: Prisma.StationWhereInput = {
       isActive: true,
+      status: 'APPROVED',
       deletedAt: null,
     };
 
@@ -393,6 +454,7 @@ export class StationsService {
       where.OR = [
         { name: { contains: dto.search, mode: 'insensitive' } },
         { address: { contains: dto.search, mode: 'insensitive' } },
+        { operatorName: { contains: dto.search, mode: 'insensitive' } },
         { area: { contains: dto.search, mode: 'insensitive' } },
         { city: { contains: dto.search, mode: 'insensitive' } },
       ];
@@ -414,7 +476,9 @@ export class StationsService {
 
     const rawStations = await this.prisma.station.findMany({
       where,
-      orderBy: [{ avgRating: 'desc' }, { name: 'asc' }],
+      // PostgreSQL enum order is EV, CNG, HYBRID. Descending therefore keeps
+      // every CNG-capable station ahead of EV before applying the existing rank.
+      orderBy: [{ stationType: 'desc' }, { avgRating: 'desc' }, { name: 'asc' }],
       take: limit + 1,
       skip: offset,
       include: {
@@ -450,6 +514,20 @@ export class StationsService {
           id: s.id,
           name: s.name,
           description: s.description,
+          operator_name: s.operatorName,
+          service_type: s.serviceType,
+          location_accuracy: s.locationAccuracy,
+          navigation_ready: s.navigationReady,
+          price_note: s.priceNote,
+          opening_hours_note: s.openingHoursNote,
+          access_notes: s.accessNotes,
+          operational_status: s.operationalStatus,
+          verification_tier: s.verificationTier,
+          verification_confidence: s.verificationConfidence,
+          verification_basis: s.verificationBasis,
+          verified_at: s.verifiedAt,
+          source_links: s.sourceLinks,
+          research_metadata: s.researchMetadata,
           station_type: s.stationType ?? 'EV',
           address: s.address,
           area: (s as unknown as { area?: string | null }).area ?? null,
@@ -466,6 +544,10 @@ export class StationsService {
           amenities: s.amenities,
           pricing: s.pricing,
           cng_details: s.cngDetails,
+          current_cng_availability: s.currentCngAvailability,
+          current_queue_length: s.currentQueueLength,
+          current_pressure_bar: s.currentPressureBar,
+          cng_status_updated_at: s.cngStatusUpdatedAt,
           phone_number: s.phoneNumber,
           total_ports: s.totalPorts,
           available_ports: s.availablePorts,
@@ -497,14 +579,14 @@ export class StationsService {
 
   async findById(id: string, userId?: string): Promise<StationDetailResult> {
     const cacheKey = `stations:detail:${id}`;
-    const cached = await this.cache.get<StationDetail>(cacheKey);
+    const cached = await this.cache.get<StationDetailResult>(cacheKey);
 
-    let station: StationDetail;
+    let detail: StationDetailResult;
     if (cached) {
-      station = cached;
+      detail = cached;
     } else {
       const found = await this.prisma.station.findFirst({
-        where: { id, isActive: true, deletedAt: null },
+        where: { id, isActive: true, status: 'APPROVED', deletedAt: null },
         include: {
           network: {
             select: { id: true, name: true, logoUrl: true, website: true, phoneNumber: true },
@@ -522,8 +604,11 @@ export class StationsService {
         throw new NotFoundException('Station not found');
       }
 
-      await this.cache.set(cacheKey, found, TTL_5_MIN);
-      station = found;
+      // Cache the JSON-safe public DTO rather than a raw Prisma result containing
+      // Date instances. Redis deserializes dates to strings, which previously made
+      // the second detail request crash in mapToStationDetail().
+      detail = this.mapToStationDetail(found, false);
+      await this.cache.set(cacheKey, detail, TTL_5_MIN);
     }
 
     // Favorite status is user-specific — always check live, not cached
@@ -535,7 +620,7 @@ export class StationsService {
       isFavorite = !!favorite;
     }
 
-    return this.mapToStationDetail(station, isFavorite);
+    return { ...detail, isFavorite };
   }
 
   // ============================================================================
@@ -547,12 +632,16 @@ export class StationsService {
     limit = 10,
     cursor?: string,
   ): Promise<{ reviews: ReviewResult[]; nextCursor: string | null }> {
-    const cacheKey = `stations:reviews:${stationId}:${limit}:${cursor ?? ''}`;
-    const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(cacheKey);
+    const cacheVersion =
+      (await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0;
+    const cacheKey = `stations:reviews:${stationId}:v${cacheVersion}:${limit}:${cursor ?? ''}`;
+    const cached = await this.cache.get<{ reviews: ReviewResult[]; nextCursor: string | null }>(
+      cacheKey,
+    );
     if (cached) return cached;
 
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -589,7 +678,7 @@ export class StationsService {
   async createReview(userId: string, stationId: string, dto: CreateReviewDto): Promise<Review> {
     // Verify station exists
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -623,15 +712,19 @@ export class StationsService {
       });
     }
 
-    // Fire-and-forget — don't block the response waiting for aggregate recalculation
-    this.updateStationRating(stationId).catch((err) =>
-      this.logger.error(`Failed to update rating for station ${stationId}`, err),
-    );
+    await this.updateStationRating(stationId);
 
     // Invalidate cached reviews and detail for this station
     await Promise.all([
-      this.cache.del(`stations:reviews:${stationId}:10:`),
       this.cache.del(`stations:detail:${stationId}`),
+      this.cache.set(
+        `stations:reviews:${stationId}:version`,
+        ((await this.cache.get<number>(`stations:reviews:${stationId}:version`)) ?? 0) + 1,
+      ),
+      this.cache.set(
+        'stations:top-picks:version',
+        ((await this.cache.get<number>('stations:top-picks:version')) ?? 0) + 1,
+      ),
     ]);
 
     return review;
@@ -655,7 +748,7 @@ export class StationsService {
 
   async addFavorite(userId: string, stationId: string): Promise<Favorite> {
     const station = await this.prisma.station.findFirst({
-      where: { id: stationId, deletedAt: null },
+      where: { id: stationId, isActive: true, status: 'APPROVED', deletedAt: null },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
@@ -694,13 +787,32 @@ export class StationsService {
     });
 
     return favorites
-      .filter((f) => f.station.isActive && !f.station.deletedAt)
+      .filter((f) => f.station.isActive && f.station.status === 'APPROVED' && !f.station.deletedAt)
+      .sort(
+        (left, right) =>
+          this.stationTypePriority(left.station.stationType) -
+          this.stationTypePriority(right.station.stationType),
+      )
       .map((f) => {
         // Create a compatible object for mapToStationCard
         const stationData: StationWithDistance = {
           id: f.station.id,
           name: f.station.name,
           description: f.station.description,
+          operator_name: f.station.operatorName,
+          service_type: f.station.serviceType,
+          location_accuracy: f.station.locationAccuracy,
+          navigation_ready: f.station.navigationReady,
+          price_note: f.station.priceNote,
+          opening_hours_note: f.station.openingHoursNote,
+          access_notes: f.station.accessNotes,
+          operational_status: f.station.operationalStatus,
+          verification_tier: f.station.verificationTier,
+          verification_confidence: f.station.verificationConfidence,
+          verification_basis: f.station.verificationBasis,
+          verified_at: f.station.verifiedAt,
+          source_links: f.station.sourceLinks,
+          research_metadata: f.station.researchMetadata,
           station_type: f.station.stationType ?? 'EV',
           address: f.station.address,
           area: (f.station as unknown as { area?: string | null }).area ?? null,
@@ -717,6 +829,10 @@ export class StationsService {
           amenities: f.station.amenities,
           pricing: f.station.pricing,
           cng_details: f.station.cngDetails,
+          current_cng_availability: f.station.currentCngAvailability,
+          current_queue_length: f.station.currentQueueLength,
+          current_pressure_bar: f.station.currentPressureBar,
+          cng_status_updated_at: f.station.cngStatusUpdatedAt,
           phone_number: f.station.phoneNumber,
           total_ports: f.station.totalPorts,
           available_ports: f.station.availablePorts,
@@ -728,7 +844,13 @@ export class StationsService {
           distance_km: null, // No distance for favorites list
         };
         const allImageUrls = f.station.images.map((img) => img.url);
-        return this.mapToStationCard(stationData, f.station.ports, f.station.images[0]?.url, true, allImageUrls);
+        return this.mapToStationCard(
+          stationData,
+          f.station.ports,
+          f.station.images[0]?.url,
+          true,
+          allImageUrls,
+        );
       });
   }
 
@@ -736,76 +858,177 @@ export class StationsService {
   // STATION SUBMISSION
   // ============================================================================
 
-  async submitStation(userId: string, dto: SubmitStationDto): Promise<StationDetailResult> {
-    const skipApproval = this.configService.get<string>('SKIP_STATION_APPROVAL') === 'true';
+  async submitStation(
+    userId: string,
+    dto: SubmitStationDto,
+    idempotencyKey?: string,
+  ): Promise<StationDetailResult> {
+    const submissionKey = idempotencyKey;
 
-    const station = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.station.create({
-        data: {
-          name: dto.name,
-          description: dto.description,
-          stationType: dto.stationType ?? 'EV',
-          address: dto.address,
-          area: dto.area,
-          city: dto.city,
-          state: dto.state,
-          postalCode: dto.postalCode,
-          country: dto.country ?? 'NG',
-          latitude: dto.latitude,
-          longitude: dto.longitude,
-          timezone: dto.timezone ?? 'Africa/Lagos',
-          operatingHours: dto.operatingHours ?? undefined,
-          amenities: dto.amenities ?? [],
-          pricing: dto.pricing ?? undefined,
-          cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
-          phoneNumber: dto.phoneNumber,
-          networkId: dto.networkId,
-          submittedBy: userId,
-          // When SKIP_STATION_APPROVAL is true, go live immediately
-          status: skipApproval ? 'APPROVED' : 'PENDING',
-          isActive: skipApproval,
-          isVerified: false,
-        },
+    if (submissionKey) {
+      const existing = await this.prisma.station.findFirst({
+        where: { submittedBy: userId, submissionKey, deletedAt: null },
+        include: { network: true, ports: true, images: true },
       });
+      if (existing) return this.mapToStationDetail(existing, false);
+    }
 
-      if (dto.heroImageUrl) {
-        await tx.stationImage.create({
+    let station;
+    try {
+      station = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.station.create({
           data: {
-            stationId: created.id,
-            url: dto.heroImageUrl,
-            sortOrder: 0,
-            isPrimary: true,
-            uploadedBy: userId,
+            name: dto.name,
+            description: dto.description,
+            stationType: dto.stationType ?? 'EV',
+            address: dto.address,
+            area: dto.area,
+            city: dto.city,
+            state: dto.state,
+            postalCode: dto.postalCode,
+            country: dto.country ?? 'NG',
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+            timezone: dto.timezone ?? 'Africa/Lagos',
+            operatingHours: dto.operatingHours ?? undefined,
+            amenities: dto.amenities ?? [],
+            pricing: dto.pricing ?? undefined,
+            cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
+            phoneNumber: dto.phoneNumber,
+            networkId: dto.networkId,
+            submittedBy: userId,
+            submissionKey,
+            status: 'PENDING',
+            isActive: false,
+            isVerified: false,
           },
         });
-      }
 
-      if (dto.ports?.length) {
-        await tx.port.createMany({
-          data: dto.ports.map((p) => ({
-            stationId: created.id,
-            connectorType: p.connectorType,
-            chargerType: p.chargerType,
-            powerKw: p.powerKw,
-            portNumber: p.portNumber,
-            pricePerKwh: p.pricePerKwh,
-            pricePerMinute: p.pricePerMinute,
-            pricePerSession: p.pricePerSession,
-            status: 'UNKNOWN' as PortStatus,
-          })),
-        });
+        if (dto.heroImageUrl) {
+          await tx.stationImage.create({
+            data: {
+              stationId: created.id,
+              url: dto.heroImageUrl,
+              sortOrder: 0,
+              isPrimary: true,
+              uploadedBy: userId,
+            },
+          });
+        }
 
-        const totalPorts = dto.ports.length;
-        await tx.station.update({
+        if (dto.ports?.length) {
+          await tx.port.createMany({
+            data: dto.ports.map((p) => ({
+              stationId: created.id,
+              connectorType: p.connectorType,
+              chargerType: p.chargerType,
+              powerKw: p.powerKw,
+              portNumber: p.portNumber,
+              pricePerKwh: p.pricePerKwh,
+              pricePerMinute: p.pricePerMinute,
+              pricePerSession: p.pricePerSession,
+              status: 'UNKNOWN' as PortStatus,
+            })),
+          });
+
+          const totalPorts = dto.ports.length;
+          await tx.station.update({
+            where: { id: created.id },
+            data: { totalPorts },
+          });
+        }
+
+        return tx.station.findUniqueOrThrow({
           where: { id: created.id },
-          data: { totalPorts },
+          include: { network: true, ports: true, images: true },
         });
+      });
+    } catch (error) {
+      if (
+        submissionKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existing = await this.prisma.station.findFirst({
+          where: { submittedBy: userId, submissionKey, deletedAt: null },
+          include: { network: true, ports: true, images: true },
+        });
+        if (existing) return this.mapToStationDetail(existing, false);
       }
+      throw error;
+    }
 
-      return created;
+    return this.mapToStationDetail(station, false);
+  }
+
+  async getOwnedSubmission(userId: string, id: string): Promise<Record<string, unknown>> {
+    const station = await this.prisma.station.findFirst({
+      where: { id, submittedBy: userId, deletedAt: null },
+      include: { network: true, ports: true, images: true },
     });
+    if (!station) throw new NotFoundException('Submission not found');
+    return {
+      ...this.mapToStationDetail(station, false),
+      status: station.status,
+      reviewReason: station.reviewReason,
+    };
+  }
 
-    return this.findById(station.id, userId);
+  async amendOwnedSubmission(
+    userId: string,
+    id: string,
+    dto: SubmitStationDto,
+  ): Promise<Record<string, unknown>> {
+    const existing = await this.prisma.station.findFirst({
+      where: { id, submittedBy: userId, deletedAt: null },
+    });
+    if (!existing) throw new NotFoundException('Submission not found');
+    if (!['PENDING', 'CHANGES_REQUESTED'].includes(existing.status)) {
+      throw new BadRequestException('Only pending or changes-requested submissions can be amended');
+    }
+    await this.prisma.station.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        stationType: dto.stationType ?? 'EV',
+        address: dto.address,
+        area: dto.area,
+        city: dto.city,
+        state: dto.state,
+        postalCode: dto.postalCode,
+        country: dto.country ?? 'NG',
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        timezone: dto.timezone ?? 'Africa/Lagos',
+        operatingHours: dto.operatingHours,
+        amenities: dto.amenities ?? [],
+        pricing: dto.pricing,
+        cngDetails: dto.cngDetails as Prisma.InputJsonValue | undefined,
+        phoneNumber: dto.phoneNumber,
+        networkId: dto.networkId,
+        status: 'PENDING',
+        isActive: false,
+        reviewReason: null,
+        changesRequestedAt: null,
+        submissionRevision: { increment: 1 },
+      },
+    });
+    return this.getOwnedSubmission(userId, id);
+  }
+
+  async withdrawOwnedSubmission(userId: string, id: string): Promise<Record<string, unknown>> {
+    const result = await this.prisma.station.updateMany({
+      where: {
+        id,
+        submittedBy: userId,
+        status: { in: ['PENDING', 'CHANGES_REQUESTED'] },
+        deletedAt: null,
+      },
+      data: { status: 'WITHDRAWN', isActive: false, withdrawnAt: new Date() },
+    });
+    if (result.count === 0) throw new BadRequestException('Submission cannot be withdrawn');
+    return this.getOwnedSubmission(userId, id);
   }
 
   async getMySubmissions(userId: string): Promise<(StationCardResult & { status: string })[]> {
@@ -820,16 +1043,30 @@ export class StationsService {
           take: 1,
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ stationType: 'desc' }, { createdAt: 'desc' }],
     });
 
     return stations.map((s) => {
       const stationData: StationWithDistance = {
         id: s.id,
-          name: s.name,
-          description: s.description,
-          station_type: s.stationType ?? 'EV',
-          address: s.address,
+        name: s.name,
+        description: s.description,
+        operator_name: s.operatorName,
+        service_type: s.serviceType,
+        location_accuracy: s.locationAccuracy,
+        navigation_ready: s.navigationReady,
+        price_note: s.priceNote,
+        opening_hours_note: s.openingHoursNote,
+        access_notes: s.accessNotes,
+        operational_status: s.operationalStatus,
+        verification_tier: s.verificationTier,
+        verification_confidence: s.verificationConfidence,
+        verification_basis: s.verificationBasis,
+        verified_at: s.verifiedAt,
+        source_links: s.sourceLinks,
+        research_metadata: s.researchMetadata,
+        station_type: s.stationType ?? 'EV',
+        address: s.address,
         area: (s as unknown as { area?: string | null }).area ?? null,
         city: s.city,
         state: s.state,
@@ -841,10 +1078,14 @@ export class StationsService {
         is_active: s.isActive,
         is_verified: s.isVerified,
         operating_hours: s.operatingHours,
-          amenities: s.amenities,
-          pricing: s.pricing,
-          cng_details: s.cngDetails,
-          phone_number: s.phoneNumber,
+        amenities: s.amenities,
+        pricing: s.pricing,
+        cng_details: s.cngDetails,
+        current_cng_availability: s.currentCngAvailability,
+        current_queue_length: s.currentQueueLength,
+        current_pressure_bar: s.currentPressureBar,
+        cng_status_updated_at: s.cngStatusUpdatedAt,
+        phone_number: s.phoneNumber,
         total_ports: s.totalPorts,
         available_ports: s.availablePorts,
         avg_rating: s.avgRating,
@@ -855,9 +1096,37 @@ export class StationsService {
         distance_km: null,
       };
       const allImageUrls = s.images.map((img) => img.url);
-      const card = this.mapToStationCard(stationData, s.ports, s.images[0]?.url, false, allImageUrls);
+      const card = this.mapToStationCard(
+        stationData,
+        s.ports,
+        s.images[0]?.url,
+        false,
+        allImageUrls,
+      );
       return { ...card, status: (s as unknown as { status: string }).status };
     });
+  }
+
+  private stationTypePriority(stationType: StationType | null | undefined): number {
+    if (stationType === StationType.CNG) return 0;
+    if (stationType === StationType.HYBRID) return 1;
+    return 2;
+  }
+
+  async withdrawSubmission(userId: string, stationId: string): Promise<void> {
+    const result = await this.prisma.station.updateMany({
+      where: {
+        id: stationId,
+        submittedBy: userId,
+        status: { in: ['PENDING', 'REJECTED'] },
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException('Withdrawable station submission not found');
+    }
+    await this.cache.del(`stations:detail:${stationId}`);
   }
 
   // ============================================================================
@@ -883,6 +1152,7 @@ export class StationsService {
   private isStationOpen(station: StationWithDistance): boolean {
     const hours = station.operating_hours as OperatingHours | null;
     if (!hours) return true; // No hours means 24/7
+    if (hours.status === 'UNVERIFIED') return false;
 
     const now = new Date();
     const timezone = station.timezone || 'Africa/Lagos';
@@ -897,24 +1167,28 @@ export class StationsService {
       });
 
       const parts = formatter.formatToParts(now);
-      const weekday = parts.find((p) => p.type === 'weekday')?.value?.toLowerCase().slice(0, 3);
+      const weekday = parts
+        .find((p) => p.type === 'weekday')
+        ?.value?.toLowerCase()
+        .slice(0, 3);
       const hour = parts.find((p) => p.type === 'hour')?.value || '00';
       const minute = parts.find((p) => p.type === 'minute')?.value || '00';
       const currentTime = `${hour}:${minute}`;
 
-      const dayHours = hours[weekday as keyof OperatingHours];
+      const dayHours = hours[weekday as Weekday];
       if (!dayHours) return false;
       if (dayHours.open === '24h' || dayHours.close === '24h') return true;
 
       return currentTime >= dayHours.open && currentTime <= dayHours.close;
     } catch {
-      return true; // Default to open on error
+      return false;
     }
   }
 
   private buildOpeningHoursText(station: StationWithDistance): string {
     const hours = station.operating_hours as OperatingHours | null;
     if (!hours) return 'Open 24/7';
+    if (hours.status === 'UNVERIFIED') return hours.label || 'Hours unverified';
 
     const now = new Date();
     const timezone = station.timezone || 'Africa/Lagos';
@@ -929,12 +1203,15 @@ export class StationsService {
       });
 
       const parts = formatter.formatToParts(now);
-      const weekday = parts.find((p) => p.type === 'weekday')?.value?.toLowerCase().slice(0, 3);
+      const weekday = parts
+        .find((p) => p.type === 'weekday')
+        ?.value?.toLowerCase()
+        .slice(0, 3);
       const hour = parts.find((p) => p.type === 'hour')?.value || '00';
       const minute = parts.find((p) => p.type === 'minute')?.value || '00';
       const currentTime = `${hour}:${minute}`;
 
-      const dayHours = hours[weekday as keyof OperatingHours];
+      const dayHours = hours[weekday as Weekday];
       if (!dayHours) return 'Closed today';
       if (dayHours.open === '24h' || dayHours.close === '24h') return 'Open 24/7';
 
@@ -942,48 +1219,57 @@ export class StationsService {
       if (currentTime > dayHours.close) return `Closed · Opens tomorrow`;
       return `Closes at ${dayHours.close}`;
     } catch {
-      return 'Open 24/7';
+      return 'Hours unverified';
     }
   }
 
   private buildStatusSummary(
     ports: { status: PortStatus }[],
     cngDetails?: CngDetails | null,
-  ): 'AVAILABLE' | 'IN_USE' | 'OUT_OF_SERVICE' {
+  ): 'AVAILABLE' | 'IN_USE' | 'OUT_OF_SERVICE' | 'UNKNOWN' {
     if (!ports.length && cngDetails?.availabilityStatus) {
       if (cngDetails.availabilityStatus === 'AVAILABLE') return 'AVAILABLE';
       if (cngDetails.availabilityStatus === 'IN_USE') return 'IN_USE';
     }
-    if (!ports.length) return 'OUT_OF_SERVICE';
+    if (!ports.length) return 'UNKNOWN';
     const available = ports.filter((p) => p.status === 'AVAILABLE').length;
     if (available > 0) return 'AVAILABLE';
     const outOfOrder = ports.filter((p) => p.status === 'OUT_OF_ORDER').length;
     if (outOfOrder === ports.length) return 'OUT_OF_SERVICE';
+    const unknown = ports.filter((p) => p.status === 'UNKNOWN').length;
+    if (unknown === ports.length) return 'UNKNOWN';
     return 'IN_USE';
   }
 
   private buildConnectorSummary(
-    ports: { connectorType: ConnectorType; powerKw: number }[],
-  ): { type: string; powerKw: number; count: number }[] {
-    const map = new Map<string, { powerKw: number; count: number }>();
+    ports: { connectorType: ConnectorType; powerKw: number | null }[],
+  ): { type: string; powerKw: number | null; count: number }[] {
+    const map = new Map<string, { powerKw: number | null; count: number }>();
     for (const port of ports) {
       const key = port.connectorType;
       const existing = map.get(key);
       if (existing) {
         existing.count += 1;
-        existing.powerKw = Math.max(existing.powerKw, port.powerKw);
+        if (port.powerKw !== null) {
+          existing.powerKw =
+            existing.powerKw === null ? port.powerKw : Math.max(existing.powerKw, port.powerKw);
+        }
       } else {
         map.set(key, { powerKw: port.powerKw, count: 1 });
       }
     }
-    return Array.from(map.entries()).map(([type, { powerKw, count }]) => ({ type, powerKw, count }));
+    return Array.from(map.entries()).map(([type, { powerKw, count }]) => ({
+      type,
+      powerKw,
+      count,
+    }));
   }
 
   private buildPriceText(pricing: StationPricing | null): string | null {
     if (!pricing) return null;
     const parts: string[] = [];
     if (pricing.perKwh) parts.push(`₦${pricing.perKwh}/kWh`);
-    if (pricing.perScm) parts.push(`₦${pricing.perScm}/scm`);
+    if (pricing.perScm) parts.push(`₦${pricing.perScm}/SCM`);
     if (pricing.perKg) parts.push(`₦${pricing.perKg}/kg`);
     if (pricing.perLitre) parts.push(`₦${pricing.perLitre}/litre`);
     if (pricing.perMinute) parts.push(`₦${pricing.perMinute}/min`);
@@ -991,9 +1277,31 @@ export class StationsService {
     return parts.join(' + ') || null;
   }
 
+  private buildCngStatus(station: {
+    station_type: StationType;
+    current_cng_availability?: string | null;
+    current_queue_length?: number | null;
+    current_pressure_bar?: Prisma.Decimal | number | null;
+    cng_status_updated_at?: Date | string | null;
+  }): CngStatusResult | null {
+    if (station.station_type !== StationType.CNG && station.station_type !== StationType.HYBRID) {
+      return null;
+    }
+
+    const availability = station.current_cng_availability;
+    return {
+      availability:
+        availability === 'AVAILABLE' || availability === 'UNAVAILABLE' ? availability : 'UNKNOWN',
+      estimatedQueueLength: station.current_queue_length ?? null,
+      pumpPressureBar:
+        station.current_pressure_bar == null ? null : Number(station.current_pressure_bar),
+      updatedAt: station.cng_status_updated_at ?? null,
+    };
+  }
+
   private mapToStationCard(
     station: StationWithDistance,
-    ports: { connectorType: ConnectorType; status: PortStatus; powerKw: number }[],
+    ports: { connectorType: ConnectorType; status: PortStatus; powerKw: number | null }[],
     heroImageUrl?: string,
     isFavorite = false,
     extraImages: string[] = [],
@@ -1010,6 +1318,17 @@ export class StationsService {
       id: station.id,
       name: station.name,
       stationType: station.station_type ?? 'EV',
+      operatorName: station.operator_name,
+      serviceType: station.service_type,
+      locationAccuracy: station.location_accuracy,
+      navigationReady: station.navigation_ready,
+      accessNotes: station.access_notes,
+      operationalStatus: station.operational_status,
+      verificationTier: station.verification_tier,
+      verificationConfidence: station.verification_confidence,
+      openingHoursNote: station.opening_hours_note,
+      priceNote: station.price_note,
+      sourceLinks: (station.source_links as ResearchSourceLink[]) || [],
       address: station.address,
       area: station.area ?? null,
       city: station.city,
@@ -1017,17 +1336,18 @@ export class StationsService {
       lng: station.longitude,
       heroImageUrl: heroImageUrl || null,
       images: allImages,
-      distanceKm: station.distance_km ? Math.round(station.distance_km * 10) / 10 : null,
+      distanceKm: station.distance_km !== null ? Math.round(station.distance_km * 10) / 10 : null,
       rating: station.avg_rating,
       reviewCount: station.review_count,
       isOpenNow: this.isStationOpen(station),
       openingHoursText: this.buildOpeningHoursText(station),
-      priceText: this.buildPriceText(pricing),
+      priceText: this.buildPriceText(pricing) ?? station.price_note,
       statusSummary: this.buildStatusSummary(ports, cngDetails),
       portsAvailableCount: availableCount,
       portsTotalCount: totalCount,
       connectors: this.buildConnectorSummary(ports),
       cngDetails,
+      cngStatus: this.buildCngStatus(station),
       amenities: (station.amenities as string[]) || [],
       updatedAt: (station.last_status_update || station.updated_at)?.toISOString() ?? null,
       isFavorite,
@@ -1036,8 +1356,25 @@ export class StationsService {
 
   private mapToStationDetail(
     station: Station & {
-      network?: { id: string; name: string; logoUrl: string | null; website: string | null; phoneNumber: string | null } | null;
-      ports: { id: string; connectorType: ConnectorType; chargerType: string; powerKw: number; status: PortStatus; portNumber: string | null; pricePerKwh: number | null; pricePerMinute: number | null; pricePerSession: number | null; estimatedAvailableAt: Date | null }[];
+      network?: {
+        id: string;
+        name: string;
+        logoUrl: string | null;
+        website: string | null;
+        phoneNumber: string | null;
+      } | null;
+      ports: {
+        id: string;
+        connectorType: ConnectorType;
+        chargerType: string;
+        powerKw: number | null;
+        status: PortStatus;
+        portNumber: string | null;
+        pricePerKwh: number | null;
+        pricePerMinute: number | null;
+        pricePerSession: number | null;
+        estimatedAvailableAt: Date | null;
+      }[];
       images: { id: string; url: string; caption: string | null; sortOrder: number }[];
     },
     isFavorite: boolean,
@@ -1045,6 +1382,10 @@ export class StationsService {
     const asRaw = station as unknown as StationWithDistance;
     asRaw.station_type = (station as unknown as { stationType?: StationType }).stationType ?? 'EV';
     asRaw.cng_details = (station as unknown as { cngDetails?: unknown }).cngDetails ?? null;
+    asRaw.current_cng_availability = station.currentCngAvailability;
+    asRaw.current_queue_length = station.currentQueueLength;
+    asRaw.current_pressure_bar = station.currentPressureBar;
+    asRaw.cng_status_updated_at = station.cngStatusUpdatedAt;
     const isOpenNow = this.isStationOpen(asRaw);
 
     // Calculate minutes remaining for in-use ports
@@ -1078,6 +1419,20 @@ export class StationsService {
       id: station.id,
       name: station.name,
       stationType: (station as unknown as { stationType?: StationType }).stationType ?? 'EV',
+      operatorName: station.operatorName,
+      serviceType: station.serviceType,
+      locationAccuracy: station.locationAccuracy,
+      navigationReady: station.navigationReady,
+      accessNotes: station.accessNotes,
+      operationalStatus: station.operationalStatus,
+      verificationTier: station.verificationTier,
+      verificationConfidence: station.verificationConfidence,
+      verificationBasis: station.verificationBasis,
+      verifiedAt: station.verifiedAt,
+      sourceLinks: (station.sourceLinks as unknown as ResearchSourceLink[]) || [],
+      researchMetadata: station.researchMetadata,
+      openingHoursNote: station.openingHoursNote,
+      priceNote: station.priceNote,
       description: station.description,
       address: station.address,
       area: (station as unknown as { area?: string | null }).area ?? null,
@@ -1093,9 +1448,10 @@ export class StationsService {
       openingHoursText: this.buildOpeningHoursText(asRaw),
       operatingHours: station.operatingHours as OperatingHours | null,
       amenities: (station.amenities as string[]) || [],
-      priceText: this.buildPriceText(pricing),
+      priceText: this.buildPriceText(pricing) ?? station.priceNote,
       pricing,
       cngDetails,
+      cngStatus: this.buildCngStatus(asRaw),
       phoneNumber: station.phoneNumber,
       network: station.network || null,
       images: station.images.map((img) => ({
@@ -1117,8 +1473,10 @@ export class StationsService {
       lastStatusUpdate: station.lastStatusUpdate,
       updatedAt: station.updatedAt?.toISOString() ?? null,
       status: (station as unknown as { status?: string }).status ?? 'APPROVED',
-      submittedBy: (station as unknown as { submittedBy?: string | null }).submittedBy ?? null,
-      rejectionReason: (station as unknown as { rejectionReason?: string | null }).rejectionReason ?? null,
+      // Never expose the submitter's user id through a public or owner response.
+      submittedBy: null,
+      rejectionReason:
+        (station as unknown as { rejectionReason?: string | null }).rejectionReason ?? null,
     };
   }
 
@@ -1140,6 +1498,20 @@ interface StationWithDistance {
   id: string;
   name: string;
   description: string | null;
+  operator_name: string | null;
+  service_type: string | null;
+  location_accuracy: string | null;
+  navigation_ready: boolean;
+  price_note: string | null;
+  opening_hours_note: string | null;
+  access_notes: string | null;
+  operational_status: string | null;
+  verification_tier: string | null;
+  verification_confidence: number | null;
+  verification_basis: string | null;
+  verified_at: Date | null;
+  source_links: unknown;
+  research_metadata: unknown;
   station_type: StationType;
   address: string;
   area?: string | null;
@@ -1156,6 +1528,10 @@ interface StationWithDistance {
   amenities: unknown;
   pricing: unknown;
   cng_details: unknown;
+  current_cng_availability: string | null;
+  current_queue_length: number | null;
+  current_pressure_bar: Prisma.Decimal | number | null;
+  cng_status_updated_at: Date | null;
   phone_number: string | null;
   total_ports: number;
   available_ports: number;
@@ -1169,7 +1545,7 @@ interface StationWithDistance {
 
 interface ConnectorSummary {
   type: string;
-  powerKw: number;
+  powerKw: number | null;
   count: number;
 }
 
@@ -1177,6 +1553,17 @@ interface StationCardResult {
   id: string;
   name: string;
   stationType: StationType;
+  operatorName: string | null;
+  serviceType: string | null;
+  locationAccuracy: string | null;
+  navigationReady: boolean;
+  accessNotes: string | null;
+  operationalStatus: string | null;
+  verificationTier: string | null;
+  verificationConfidence: number | null;
+  openingHoursNote: string | null;
+  priceNote: string | null;
+  sourceLinks: ResearchSourceLink[];
   address: string;
   area: string | null;
   city: string;
@@ -1195,6 +1582,7 @@ interface StationCardResult {
   portsTotalCount: number;
   connectors: ConnectorSummary[];
   cngDetails: CngDetails | null;
+  cngStatus: CngStatusResult | null;
   amenities: string[];
   updatedAt: string | null;
   isFavorite: boolean;
@@ -1204,6 +1592,20 @@ interface StationDetailResult {
   id: string;
   name: string;
   stationType: StationType;
+  operatorName: string | null;
+  serviceType: string | null;
+  locationAccuracy: string | null;
+  navigationReady: boolean;
+  accessNotes: string | null;
+  operationalStatus: string | null;
+  verificationTier: string | null;
+  verificationConfidence: number | null;
+  verificationBasis: string | null;
+  verifiedAt: Date | null;
+  sourceLinks: ResearchSourceLink[];
+  researchMetadata: unknown;
+  openingHoursNote: string | null;
+  priceNote: string | null;
   description: string | null;
   address: string;
   area: string | null;
@@ -1222,14 +1624,21 @@ interface StationDetailResult {
   priceText: string | null;
   pricing: StationPricing | null;
   cngDetails: CngDetails | null;
+  cngStatus: CngStatusResult | null;
   phoneNumber: string | null;
-  network: { id: string; name: string; logoUrl: string | null; website: string | null; phoneNumber: string | null } | null;
+  network: {
+    id: string;
+    name: string;
+    logoUrl: string | null;
+    website: string | null;
+    phoneNumber: string | null;
+  } | null;
   images: { id: string; url: string; caption: string | null }[];
   ports: {
     id: string;
     connectorType: string;
     chargerType: string;
-    powerKw: number;
+    powerKw: number | null;
     status: string;
     portNumber: string | null;
     pricing: { perKwh: number | null; perMinute: number | null; sessionFee: number | null };

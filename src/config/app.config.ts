@@ -43,6 +43,34 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  ADMIN_MFA_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  ADMIN_MFA_PREVIOUS_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  RECOVERY_CODE_PEPPER: string;
+
+  @IsString()
+  @IsOptional()
+  ADMIN_PORTAL_URL: string = 'http://localhost:3000';
+
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  RESEND_FROM_EMAIL: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_TEAM_NOTIFICATION_EMAIL: string = 'team@gochrge.com';
+
+  @IsString()
+  @IsOptional()
   REDIS_URL: string = 'redis://localhost:6379';
 
   @IsString()
@@ -83,6 +111,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CNG_APPLICATION_PREVIOUS_ENCRYPTION_KEY: string;
+
+  @IsString()
+  @IsOptional()
   CNG_DOCUMENT_STORAGE_PATH: string = 'private-uploads/cng-applications';
 
   @IsString()
@@ -92,6 +124,42 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CNG_OTP_WEBHOOK_TOKEN: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_OTP_DELIVERY_ENABLED: string = 'false';
+
+  @IsString()
+  @IsOptional()
+  CNG_OTP_TEST_RECIPIENTS: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_APPLICATIONS_ENABLED: string = 'false';
+
+  @IsString()
+  @IsOptional()
+  CHRGE_ENV: string;
+
+  @IsString()
+  @IsOptional()
+  CNG_DOCUMENT_SCAN_MODE: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_BASE_URL: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_SENDER_ID: string;
+
+  @IsString()
+  @IsOptional()
+  TERMII_CHANNEL: string;
 
   @IsString()
   @IsOptional()
@@ -135,6 +203,8 @@ export function validateEnv(config: Record<string, unknown>) {
       'R2_ACCESS_KEY_ID',
       'R2_SECRET_ACCESS_KEY',
       'R2_BUCKET',
+      'ADMIN_MFA_ENCRYPTION_KEY',
+      'RECOVERY_CODE_PEPPER',
     ];
     const missing = requiredProductionValues.filter(
       (name) => !String(validatedConfig[name] ?? '').trim(),
@@ -147,6 +217,7 @@ export function validateEnv(config: Record<string, unknown>) {
     const secretValues = [
       ['JWT_SECRET', validatedConfig.JWT_SECRET],
       ['REFRESH_TOKEN_PEPPER', validatedConfig.REFRESH_TOKEN_PEPPER],
+      ['RECOVERY_CODE_PEPPER', validatedConfig.RECOVERY_CODE_PEPPER],
       ['CNG_APPLICATION_ENCRYPTION_KEY', validatedConfig.CNG_APPLICATION_ENCRYPTION_KEY],
     ] as const;
     const weakSecrets = secretValues
@@ -164,6 +235,29 @@ export function validateEnv(config: Record<string, unknown>) {
       .filter(Boolean);
     if (origins.length === 0 || origins.some((origin) => !origin.startsWith('https://'))) {
       throw new Error('Production CORS_ORIGINS must contain only HTTPS origins');
+    }
+
+    if (
+      validatedConfig.CNG_APPLICATIONS_ENABLED === 'true' &&
+      validatedConfig.CNG_OTP_DELIVERY_ENABLED !== 'true'
+    ) {
+      throw new Error('Enabled CNG applications require explicit OTP delivery enablement');
+    }
+
+    if (
+      validatedConfig.CNG_APPLICATIONS_ENABLED === 'true' &&
+      !validatedConfig.CNG_OTP_WEBHOOK_URL &&
+      !(validatedConfig.TERMII_BASE_URL && validatedConfig.TERMII_API_KEY) &&
+      !(validatedConfig.CHRGE_ENV === 'staging' && validatedConfig.CNG_OTP_TEST_RECIPIENTS?.trim())
+    ) {
+      throw new Error('Enabled CNG applications require an OTP delivery provider');
+    }
+
+    if (
+      validatedConfig.CNG_DOCUMENT_SCAN_MODE === 'signature-only' &&
+      validatedConfig.CHRGE_ENV !== 'staging'
+    ) {
+      throw new Error('Signature-only document clearance is restricted to staging');
     }
   }
 
@@ -200,11 +294,22 @@ export const appConfig = () => ({
     authLimit: parseInt(process.env.AUTH_THROTTLE_LIMIT || '10', 10),
   },
   cngApplications: {
+    enabled: process.env.CNG_APPLICATIONS_ENABLED === 'true',
     encryptionKey: process.env.CNG_APPLICATION_ENCRYPTION_KEY,
     documentStoragePath:
       process.env.CNG_DOCUMENT_STORAGE_PATH || 'private-uploads/cng-applications',
     otpWebhookUrl: process.env.CNG_OTP_WEBHOOK_URL,
     otpWebhookToken: process.env.CNG_OTP_WEBHOOK_TOKEN,
+    otpDeliveryEnabled: process.env.CNG_OTP_DELIVERY_ENABLED === 'true',
+    otpTestRecipients: process.env.CNG_OTP_TEST_RECIPIENTS,
+    documentScanMode: process.env.CNG_DOCUMENT_SCAN_MODE,
+  },
+  environment: process.env.CHRGE_ENV,
+  termii: {
+    baseUrl: process.env.TERMII_BASE_URL,
+    apiKey: process.env.TERMII_API_KEY,
+    senderId: process.env.TERMII_SENDER_ID || 'CHRGE',
+    channel: process.env.TERMII_CHANNEL || 'dnd',
   },
   swagger: {
     enabled: process.env.ENABLE_SWAGGER === 'true',
