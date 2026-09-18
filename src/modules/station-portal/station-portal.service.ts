@@ -1,10 +1,13 @@
 import {
   BadRequestException,
+  Inject,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import {
   CngAvailabilityStatus,
   Prisma,
@@ -27,6 +30,7 @@ export class StationPortalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: CngEmailNotificationsService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   async listEligibleStations(dto: ListEligibleStationsDto) {
@@ -325,6 +329,11 @@ export class StationPortalService {
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     if (result.changed && !result.duplicate && result.report?.id) {
+      const topPicksVersion = (await this.cache.get<number>('stations:top-picks:version')) ?? 0;
+      await Promise.all([
+        this.cache.del(`stations:detail:${stationId}`),
+        this.cache.set('stations:top-picks:version', topPicksVersion + 1),
+      ]);
       return { ...result, notifications: await this.notifications.deliverReportNotifications(result.report.id) };
     }
     return result;

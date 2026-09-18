@@ -228,6 +228,10 @@ describe('StationsService', () => {
           paymentMethods: ['cash', 'card', 'transfer'],
           availabilityStatus: 'AVAILABLE',
         },
+        currentCngAvailability: 'AVAILABLE',
+        currentQueueLength: 4,
+        currentPressureBar: 200,
+        cngStatusUpdatedAt: new Date('2026-09-18T10:00:00.000Z'),
         ports: [],
         images: [],
       };
@@ -244,6 +248,12 @@ describe('StationsService', () => {
             dispenserCount: 4,
             availabilityStatus: 'AVAILABLE',
           }),
+          cngStatus: {
+            availability: 'AVAILABLE',
+            estimatedQueueLength: 4,
+            pumpPressureBar: 200,
+            updatedAt: new Date('2026-09-18T10:00:00.000Z'),
+          },
         }),
       );
     });
@@ -291,6 +301,10 @@ describe('StationsService', () => {
           dispenserCount: 4,
           availabilityStatus: 'AVAILABLE',
         },
+        currentCngAvailability: 'UNAVAILABLE',
+        currentQueueLength: 9,
+        currentPressureBar: 180,
+        cngStatusUpdatedAt: new Date('2026-09-18T11:00:00.000Z'),
         network: mockNetwork,
         ports: [],
         images: [mockImage],
@@ -309,6 +323,12 @@ describe('StationsService', () => {
             dispenserCount: 4,
             availabilityStatus: 'AVAILABLE',
           }),
+          cngStatus: {
+            availability: 'UNAVAILABLE',
+            estimatedQueueLength: 9,
+            pumpPressureBar: 180,
+            updatedAt: new Date('2026-09-18T11:00:00.000Z'),
+          },
         }),
       );
     });

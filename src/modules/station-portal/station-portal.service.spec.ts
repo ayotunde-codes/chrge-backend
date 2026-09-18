@@ -13,9 +13,11 @@ describe('StationPortalService', () => {
     $transaction: jest.fn(),
   };
   const notifications = { deliverReportNotifications: jest.fn() };
+  const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
   const service = new StationPortalService(
     prisma as unknown as PrismaService,
     notifications as unknown as CngEmailNotificationsService,
+    cache as unknown as import('cache-manager').Cache,
   );
 
   afterEach(() => jest.clearAllMocks());

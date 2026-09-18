@@ -60,6 +60,13 @@ interface CngDetails {
   safetyCertification?: string;
 }
 
+interface CngStatusResult {
+  availability: 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
+  estimatedQueueLength: number | null;
+  pumpPressureBar: number | null;
+  updatedAt: Date | string | null;
+}
+
 interface ResearchSourceLink {
   kind: string;
   url: string;
@@ -146,6 +153,10 @@ export class StationsService {
         s.amenities,
         s.pricing,
         s."cngDetails" as cng_details,
+        s."currentCngAvailability" as current_cng_availability,
+        s."currentQueueLength" as current_queue_length,
+        s."currentPressureBar" as current_pressure_bar,
+        s."cngStatusUpdatedAt" as cng_status_updated_at,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -309,6 +320,10 @@ export class StationsService {
         s.amenities,
         s.pricing,
         s."cngDetails" as cng_details,
+        s."currentCngAvailability" as current_cng_availability,
+        s."currentQueueLength" as current_queue_length,
+        s."currentPressureBar" as current_pressure_bar,
+        s."cngStatusUpdatedAt" as cng_status_updated_at,
         s."phoneNumber" as phone_number,
         s."totalPorts" as total_ports,
         s."availablePorts" as available_ports,
@@ -509,6 +524,10 @@ export class StationsService {
           amenities: s.amenities,
           pricing: s.pricing,
           cng_details: s.cngDetails,
+          current_cng_availability: s.currentCngAvailability,
+          current_queue_length: s.currentQueueLength,
+          current_pressure_bar: s.currentPressureBar,
+          cng_status_updated_at: s.cngStatusUpdatedAt,
           phone_number: s.phoneNumber,
           total_ports: s.totalPorts,
           available_ports: s.availablePorts,
@@ -785,6 +804,10 @@ export class StationsService {
           amenities: f.station.amenities,
           pricing: f.station.pricing,
           cng_details: f.station.cngDetails,
+          current_cng_availability: f.station.currentCngAvailability,
+          current_queue_length: f.station.currentQueueLength,
+          current_pressure_bar: f.station.currentPressureBar,
+          cng_status_updated_at: f.station.cngStatusUpdatedAt,
           phone_number: f.station.phoneNumber,
           total_ports: f.station.totalPorts,
           available_ports: f.station.availablePorts,
@@ -1033,6 +1056,10 @@ export class StationsService {
         amenities: s.amenities,
         pricing: s.pricing,
         cng_details: s.cngDetails,
+        current_cng_availability: s.currentCngAvailability,
+        current_queue_length: s.currentQueueLength,
+        current_pressure_bar: s.currentPressureBar,
+        cng_status_updated_at: s.cngStatusUpdatedAt,
         phone_number: s.phoneNumber,
         total_ports: s.totalPorts,
         available_ports: s.availablePorts,
@@ -1219,6 +1246,30 @@ export class StationsService {
     return parts.join(' + ') || null;
   }
 
+  private buildCngStatus(station: {
+    station_type: StationType;
+    current_cng_availability?: string | null;
+    current_queue_length?: number | null;
+    current_pressure_bar?: Prisma.Decimal | number | null;
+    cng_status_updated_at?: Date | string | null;
+  }): CngStatusResult | null {
+    if (station.station_type !== StationType.CNG && station.station_type !== StationType.HYBRID) {
+      return null;
+    }
+
+    const availability = station.current_cng_availability;
+    return {
+      availability:
+        availability === 'AVAILABLE' || availability === 'UNAVAILABLE'
+          ? availability
+          : 'UNKNOWN',
+      estimatedQueueLength: station.current_queue_length ?? null,
+      pumpPressureBar:
+        station.current_pressure_bar == null ? null : Number(station.current_pressure_bar),
+      updatedAt: station.cng_status_updated_at ?? null,
+    };
+  }
+
   private mapToStationCard(
     station: StationWithDistance,
     ports: { connectorType: ConnectorType; status: PortStatus; powerKw: number | null }[],
@@ -1267,6 +1318,7 @@ export class StationsService {
       portsTotalCount: totalCount,
       connectors: this.buildConnectorSummary(ports),
       cngDetails,
+      cngStatus: this.buildCngStatus(station),
       amenities: (station.amenities as string[]) || [],
       updatedAt: (station.last_status_update || station.updated_at)?.toISOString() ?? null,
       isFavorite,
@@ -1301,6 +1353,10 @@ export class StationsService {
     const asRaw = station as unknown as StationWithDistance;
     asRaw.station_type = (station as unknown as { stationType?: StationType }).stationType ?? 'EV';
     asRaw.cng_details = (station as unknown as { cngDetails?: unknown }).cngDetails ?? null;
+    asRaw.current_cng_availability = station.currentCngAvailability;
+    asRaw.current_queue_length = station.currentQueueLength;
+    asRaw.current_pressure_bar = station.currentPressureBar;
+    asRaw.cng_status_updated_at = station.cngStatusUpdatedAt;
     const isOpenNow = this.isStationOpen(asRaw);
 
     // Calculate minutes remaining for in-use ports
@@ -1366,6 +1422,7 @@ export class StationsService {
       priceText: this.buildPriceText(pricing) ?? station.priceNote,
       pricing,
       cngDetails,
+      cngStatus: this.buildCngStatus(asRaw),
       phoneNumber: station.phoneNumber,
       network: station.network || null,
       images: station.images.map((img) => ({
@@ -1442,6 +1499,10 @@ interface StationWithDistance {
   amenities: unknown;
   pricing: unknown;
   cng_details: unknown;
+  current_cng_availability: string | null;
+  current_queue_length: number | null;
+  current_pressure_bar: Prisma.Decimal | number | null;
+  cng_status_updated_at: Date | null;
   phone_number: string | null;
   total_ports: number;
   available_ports: number;
@@ -1492,6 +1553,7 @@ interface StationCardResult {
   portsTotalCount: number;
   connectors: ConnectorSummary[];
   cngDetails: CngDetails | null;
+  cngStatus: CngStatusResult | null;
   amenities: string[];
   updatedAt: string | null;
   isFavorite: boolean;
@@ -1533,6 +1595,7 @@ interface StationDetailResult {
   priceText: string | null;
   pricing: StationPricing | null;
   cngDetails: CngDetails | null;
+  cngStatus: CngStatusResult | null;
   phoneNumber: string | null;
   network: {
     id: string;

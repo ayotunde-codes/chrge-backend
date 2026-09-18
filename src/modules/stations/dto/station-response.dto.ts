@@ -23,6 +23,23 @@ class StationSourceLinkDto {
   url: string;
 }
 
+class CngStatusDto {
+  @ApiProperty({
+    example: 'AVAILABLE',
+    enum: ['AVAILABLE', 'UNAVAILABLE', 'UNKNOWN'],
+  })
+  availability: string;
+
+  @ApiPropertyOptional({ example: 4, nullable: true })
+  estimatedQueueLength: number | null;
+
+  @ApiPropertyOptional({ example: 200, nullable: true })
+  pumpPressureBar: number | null;
+
+  @ApiPropertyOptional({ example: '2026-09-18T10:00:00.000Z', nullable: true })
+  updatedAt: Date | string | null;
+}
+
 export class StationCardResponseDto {
   @ApiProperty({ example: 'uuid' })
   id: string;
@@ -35,6 +52,9 @@ export class StationCardResponseDto {
 
   @ApiPropertyOptional({ example: 'ev_charging', nullable: true })
   serviceType: string | null;
+
+  @ApiPropertyOptional({ type: CngStatusDto, nullable: true })
+  cngStatus: CngStatusDto | null;
 
   @ApiPropertyOptional({ example: 'google_rooftop', nullable: true })
   locationAccuracy: string | null;
@@ -265,6 +285,9 @@ export class StationDetailResponseDto {
 
   @ApiPropertyOptional({ example: 'ev_charging', nullable: true })
   serviceType: string | null;
+
+  @ApiPropertyOptional({ type: CngStatusDto, nullable: true })
+  cngStatus: CngStatusDto | null;
 
   @ApiPropertyOptional({ example: 'google_rooftop', nullable: true })
   locationAccuracy: string | null;
