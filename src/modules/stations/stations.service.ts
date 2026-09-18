@@ -113,7 +113,9 @@ export class StationsService {
           : userConnector
             ? [userConnector]
             : null;
-    const hasPortFilter = Boolean(connectorFilter?.length || dto.status?.length || dto.minPowerKw);
+    const hasPortFilter =
+      dto.stationType !== StationType.CNG &&
+      Boolean(connectorFilter?.length || dto.status?.length || dto.minPowerKw);
 
     // Fetch stations with Haversine distance calculation
     // Using raw query for distance ordering
@@ -179,13 +181,16 @@ export class StationsService {
         ${dto.stationType ? Prisma.sql`AND s."stationType" = CAST(${dto.stationType} AS "StationType")` : Prisma.sql``}
         ${
           hasPortFilter
-            ? Prisma.sql`AND EXISTS (
-                SELECT 1
-                FROM ports p
-                WHERE p."stationId" = s.id
-                  ${connectorFilter?.length ? Prisma.sql`AND p."connectorType"::text IN (${Prisma.join(connectorFilter)})` : Prisma.sql``}
-                  ${dto.status?.length ? Prisma.sql`AND p.status::text IN (${Prisma.join(dto.status)})` : Prisma.sql``}
-                  ${dto.minPowerKw ? Prisma.sql`AND p."powerKw" >= ${dto.minPowerKw}` : Prisma.sql``}
+            ? Prisma.sql`AND (
+                s."stationType" IN ('CNG', 'HYBRID')
+                OR EXISTS (
+                  SELECT 1
+                  FROM ports p
+                  WHERE p."stationId" = s.id
+                    ${connectorFilter?.length ? Prisma.sql`AND p."connectorType"::text IN (${Prisma.join(connectorFilter)})` : Prisma.sql``}
+                    ${dto.status?.length ? Prisma.sql`AND p.status::text IN (${Prisma.join(dto.status)})` : Prisma.sql``}
+                    ${dto.minPowerKw ? Prisma.sql`AND p."powerKw" >= ${dto.minPowerKw}` : Prisma.sql``}
+                )
               )`
             : Prisma.sql``
         }
@@ -196,7 +201,13 @@ export class StationsService {
             sin(radians(${dto.lat})) * sin(radians(s.latitude))
           )
         ) <= ${radiusKm}
-      ORDER BY distance_km ASC
+      ORDER BY
+        CASE
+          WHEN s."stationType" = 'CNG' THEN 0
+          WHEN s."stationType" = 'HYBRID' THEN 1
+          ELSE 2
+        END ASC,
+        distance_km ASC
       LIMIT ${limit + 1}
       ${dto.cursor ? Prisma.sql`OFFSET ${parseInt(dto.cursor, 10)}` : Prisma.sql``}
     `;
@@ -363,7 +374,14 @@ export class StationsService {
             sin(radians(${lat})) * sin(radians(s.latitude))
           )
         ) <= 25
-      ORDER BY score DESC, distance_km ASC
+      ORDER BY
+        CASE
+          WHEN s."stationType" = 'CNG' THEN 0
+          WHEN s."stationType" = 'HYBRID' THEN 1
+          ELSE 2
+        END ASC,
+        score DESC,
+        distance_km ASC
       LIMIT ${limit}
     `;
 
@@ -458,7 +476,9 @@ export class StationsService {
 
     const rawStations = await this.prisma.station.findMany({
       where,
-      orderBy: [{ avgRating: 'desc' }, { name: 'asc' }],
+      // PostgreSQL enum order is EV, CNG, HYBRID. Descending therefore keeps
+      // every CNG-capable station ahead of EV before applying the existing rank.
+      orderBy: [{ stationType: 'desc' }, { avgRating: 'desc' }, { name: 'asc' }],
       take: limit + 1,
       skip: offset,
       include: {
@@ -768,6 +788,11 @@ export class StationsService {
 
     return favorites
       .filter((f) => f.station.isActive && f.station.status === 'APPROVED' && !f.station.deletedAt)
+      .sort(
+        (left, right) =>
+          this.stationTypePriority(left.station.stationType) -
+          this.stationTypePriority(right.station.stationType),
+      )
       .map((f) => {
         // Create a compatible object for mapToStationCard
         const stationData: StationWithDistance = {
@@ -1018,7 +1043,7 @@ export class StationsService {
           take: 1,
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ stationType: 'desc' }, { createdAt: 'desc' }],
     });
 
     return stations.map((s) => {
@@ -1080,6 +1105,12 @@ export class StationsService {
       );
       return { ...card, status: (s as unknown as { status: string }).status };
     });
+  }
+
+  private stationTypePriority(stationType: StationType | null | undefined): number {
+    if (stationType === StationType.CNG) return 0;
+    if (stationType === StationType.HYBRID) return 1;
+    return 2;
   }
 
   async withdrawSubmission(userId: string, stationId: string): Promise<void> {
@@ -1260,9 +1291,7 @@ export class StationsService {
     const availability = station.current_cng_availability;
     return {
       availability:
-        availability === 'AVAILABLE' || availability === 'UNAVAILABLE'
-          ? availability
-          : 'UNKNOWN',
+        availability === 'AVAILABLE' || availability === 'UNAVAILABLE' ? availability : 'UNKNOWN',
       estimatedQueueLength: station.current_queue_length ?? null,
       pumpPressureBar:
         station.current_pressure_bar == null ? null : Number(station.current_pressure_bar),

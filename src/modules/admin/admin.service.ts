@@ -177,7 +177,13 @@ export class AdminService {
             }
           : {}),
       },
-      orderBy: [{ createdAt: dto.order === 'oldest' ? 'asc' : 'desc' }, { id: 'desc' }],
+      // StationType is defined as EV, CNG, HYBRID in PostgreSQL. Descending
+      // keeps CNG-capable stations ahead of EV across every paginated admin list.
+      orderBy: [
+        { stationType: 'desc' },
+        { createdAt: dto.order === 'oldest' ? 'asc' : 'desc' },
+        { id: 'desc' },
+      ],
       take: limit + 1,
       ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
       select: {

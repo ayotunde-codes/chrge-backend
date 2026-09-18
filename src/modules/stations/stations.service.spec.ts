@@ -179,6 +179,18 @@ describe('StationsService', () => {
   // ============================================================================
 
   describe('findAll', () => {
+    it('prioritizes CNG-capable stations before EV stations', async () => {
+      mockPrismaService.station.findMany.mockResolvedValue([]);
+
+      await service.findAll({ limit: 20 });
+
+      expect(mockPrismaService.station.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ stationType: 'desc' }, { avgRating: 'desc' }, { name: 'asc' }],
+        }),
+      );
+    });
+
     it('should search station name, address, area, and city', async () => {
       mockPrismaService.station.findMany.mockResolvedValue([]);
       mockPrismaService.port.findMany.mockResolvedValue([]);
@@ -536,6 +548,29 @@ describe('StationsService', () => {
   });
 
   describe('getFavorites', () => {
+    it('returns CNG favorites before EV favorites', async () => {
+      mockPrismaService.favorite.findMany.mockResolvedValue([
+        {
+          ...mockFavorite,
+          station: { ...mockStation, id: 'ev-station', stationType: 'EV', ports: [], images: [] },
+        },
+        {
+          ...mockFavorite,
+          station: {
+            ...mockStation,
+            id: 'cng-station',
+            stationType: 'CNG',
+            ports: [],
+            images: [],
+          },
+        },
+      ]);
+
+      const result = await service.getFavorites('user-123');
+
+      expect(result.map((station) => station.id)).toEqual(['cng-station', 'ev-station']);
+    });
+
     it('should return user favorite stations', async () => {
       const favoriteWithStation = {
         ...mockFavorite,

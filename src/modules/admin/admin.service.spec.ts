@@ -21,6 +21,7 @@ describe('AdminService', () => {
     },
     station: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -255,6 +256,20 @@ describe('AdminService', () => {
   // ============================================================================
   // STATIONS
   // ============================================================================
+
+  describe('listStations', () => {
+    it('prioritizes CNG-capable stations before EV stations', async () => {
+      mockPrismaService.station.findMany.mockResolvedValue([]);
+
+      await service.listStations({ order: 'newest' } as never);
+
+      expect(mockPrismaService.station.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ stationType: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+    });
+  });
 
   describe('createStation', () => {
     const createStationDto = {
