@@ -98,7 +98,8 @@ export class ResendEmailService {
   async sendPasswordResetCode(message: PasswordResetEmail): Promise<{ messageId: string }> {
     const apiKey = this.config.get<string>('RESEND_API_KEY')?.trim();
     const from = this.config.get<string>('RESEND_FROM_EMAIL')?.trim();
-    if (!apiKey || !from) throw new ServiceUnavailableException('Transactional email is not configured');
+    if (!apiKey || !from)
+      throw new ServiceUnavailableException('Transactional email is not configured');
 
     const environment = this.config.get<string>('CHRGE_ENV')?.trim().toLowerCase() || 'development';
     const isStaging = environment === 'staging';
@@ -123,9 +124,11 @@ export class ResendEmailService {
       }),
       signal: AbortSignal.timeout(10_000),
     }).catch(() => null);
-    if (!response?.ok) throw new ServiceUnavailableException('Could not send the password reset email');
+    if (!response?.ok)
+      throw new ServiceUnavailableException('Could not send the password reset email');
     const result = (await response.json().catch(() => null)) as { id?: string } | null;
-    if (!result?.id) throw new ServiceUnavailableException('Email provider returned an invalid response');
+    if (!result?.id)
+      throw new ServiceUnavailableException('Email provider returned an invalid response');
     return { messageId: result.id };
   }
 
@@ -145,8 +148,10 @@ export class ResendEmailService {
       title: `${status} at ${this.escape(station.name)}`,
       intro: `${this.escape(message.reporter)} published a station update.`,
       rows: [
-        ['Station', station.name], ['Location', `${station.address}, ${station.city}, ${station.state}`],
-        ['Availability', status], ['Estimated queue', `${station.queueLength ?? 0} vehicles`],
+        ['Station', station.name],
+        ['Location', `${station.address}, ${station.city}, ${station.state}`],
+        ['Availability', status],
+        ['Estimated queue', `${station.queueLength ?? 0} vehicles`],
         ['Pump pressure', `${station.pressureBar ?? 0} bar`],
       ],
     });
@@ -165,7 +170,10 @@ export class ResendEmailService {
       title: `Gas is available at ${this.escape(message.station.name)}`,
       intro: 'A station you saved has reported that CNG is available now.',
       rows: [
-        ['Location', `${message.station.address}, ${message.station.city}, ${message.station.state}`],
+        [
+          'Location',
+          `${message.station.address}, ${message.station.city}, ${message.station.state}`,
+        ],
         ['Estimated queue', `${message.station.queueLength ?? 0} vehicles`],
         ['Pump pressure', `${message.station.pressureBar ?? 0} bar`],
       ],
@@ -178,16 +186,95 @@ export class ResendEmailService {
     asOfLabel: string;
     stations: CngStationSnapshot[];
   }): Promise<{ messageId: string }> {
-    const stationRows = message.stations.map((station) => `<tr><td style="padding:10px;border-bottom:1px solid #dfe7e1"><strong>${this.escape(station.name)}</strong><br><span style="color:#65736b;font-size:12px">${this.escape(station.city)}, ${this.escape(station.state)}</span></td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.availability === 'AVAILABLE' ? 'Available' : station.availability === 'UNAVAILABLE' ? 'Not available' : 'Unknown'}</td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.queueLength ?? '—'}</td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.pressureBar ?? '—'}${station.pressureBar == null ? '' : ' bar'}</td></tr>`).join('');
+    const stationRows = message.stations
+      .map(
+        (station) =>
+          `<tr><td style="padding:10px;border-bottom:1px solid #dfe7e1"><strong>${this.escape(station.name)}</strong><br><span style="color:#65736b;font-size:12px">${this.escape(station.city)}, ${this.escape(station.state)}</span></td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.availability === 'AVAILABLE' ? 'Available' : station.availability === 'UNAVAILABLE' ? 'Not available' : 'Unknown'}</td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.queueLength ?? '—'}</td><td style="padding:10px;border-bottom:1px solid #dfe7e1">${station.pressureBar ?? '—'}${station.pressureBar == null ? '' : ' bar'}</td></tr>`,
+      )
+      .join('');
     return this.sendCngEmail({
       to: message.to,
       subject: `CHRGE CNG availability update — ${message.asOfLabel}`,
       idempotencyKey: `cng-network-digest/${message.digestKey}/${message.to.toLowerCase()}`,
       purpose: 'cng_network_digest',
       title: `CNG availability as of ${this.escape(message.asOfLabel)}`,
-      intro: 'Here is the latest station availability, estimated queue length, and pump pressure reported to CHRGE.',
+      intro:
+        'Here is the latest station availability, estimated queue length, and pump pressure reported to CHRGE.',
       customHtml: `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f3f7f4;text-align:left"><th style="padding:10px">Station</th><th style="padding:10px">Gas</th><th style="padding:10px">Queue</th><th style="padding:10px">Pressure</th></tr></thead><tbody>${stationRows || '<tr><td colspan="4" style="padding:16px">No CNG stations are currently available.</td></tr>'}</tbody></table>`,
       rows: [],
+    });
+  }
+
+  async sendCngAdditionalInformationRequest(message: {
+    to: string;
+    requestId: string;
+    reference: string;
+    question: string;
+    responseType: string;
+    dashboardUrl: string;
+  }): Promise<{ messageId: string }> {
+    return this.sendCngEmail({
+      to: message.to,
+      subject: `Additional information required for ${message.reference}`,
+      idempotencyKey: `cng-additional-info-request/${message.requestId}`,
+      purpose: 'cng_additional_information_request',
+      title: 'Your application needs additional information',
+      intro: `Please sign in to your CHRGE dashboard to respond. Request: ${this.escape(message.question)}`,
+      rows: [
+        ['Application', message.reference],
+        ['Response required', message.responseType],
+        ['Dashboard', message.dashboardUrl],
+      ],
+    });
+  }
+
+  async sendCngAdditionalInformationResponse(message: {
+    to: string;
+    responseId: string;
+    reference: string;
+    customerName: string;
+    responseType: string;
+    adminUrl: string;
+  }): Promise<{ messageId: string }> {
+    return this.sendCngEmail({
+      to: message.to,
+      subject: `Customer responded: ${message.reference}`,
+      idempotencyKey: `cng-additional-info-response/${message.responseId}`,
+      purpose: 'cng_additional_information_response',
+      title: 'A customer submitted additional information',
+      intro: `${this.escape(message.customerName)} has responded to an information request.`,
+      rows: [
+        ['Application', message.reference],
+        ['Response received', message.responseType],
+        ['Review in admin', message.adminUrl],
+      ],
+    });
+  }
+
+  async sendCngApplicationUpdated(message: {
+    to: string;
+    notificationId: string;
+    reference: string;
+    updatedBy: 'customer' | 'admin';
+    changedFields: string[];
+    dashboardUrl: string;
+  }): Promise<{ messageId: string }> {
+    return this.sendCngEmail({
+      to: message.to,
+      subject: `Your CHRGE application ${message.reference} was updated`,
+      idempotencyKey: `cng-application-updated/${message.notificationId}`,
+      purpose: 'cng_application_updated',
+      title: 'Your application information was updated',
+      intro:
+        message.updatedBy === 'admin'
+          ? 'A CHRGE administrator updated your application following a correction request.'
+          : 'Changes to your application were saved successfully.',
+      rows: [
+        ['Application', message.reference],
+        ['Updated by', message.updatedBy === 'admin' ? 'CHRGE administrator' : 'You'],
+        ['Information changed', message.changedFields.join(', ')],
+        ['View application', message.dashboardUrl],
+      ],
     });
   }
 
@@ -203,29 +290,50 @@ export class ResendEmailService {
   }): Promise<{ messageId: string }> {
     const apiKey = this.config.get<string>('RESEND_API_KEY')?.trim();
     const from = this.config.get<string>('RESEND_FROM_EMAIL')?.trim();
-    if (!apiKey || !from) throw new ServiceUnavailableException('Transactional email is not configured');
+    if (!apiKey || !from)
+      throw new ServiceUnavailableException('Transactional email is not configured');
     const environment = this.config.get<string>('CHRGE_ENV')?.trim().toLowerCase() || 'development';
     const isStaging = environment === 'staging';
-    const rows = message.rows.map(([label, value]) => `<tr><td style="padding:8px 0;color:#65736b">${this.escape(label)}</td><td style="padding:8px 0;text-align:right;font-weight:700">${this.escape(value)}</td></tr>`).join('');
+    const rows = message.rows
+      .map(
+        ([label, value]) =>
+          `<tr><td style="padding:8px 0;color:#65736b">${this.escape(label)}</td><td style="padding:8px 0;text-align:right;font-weight:700">${this.escape(value)}</td></tr>`,
+      )
+      .join('');
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', 'idempotency-key': message.idempotencyKey },
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': message.idempotencyKey,
+      },
       body: JSON.stringify({
-        from: `${isStaging ? 'CHRGE Staging' : 'CHRGE'} <${from}>`, to: [message.to],
+        from: `${isStaging ? 'CHRGE Staging' : 'CHRGE'} <${from}>`,
+        to: [message.to],
         subject: `${isStaging ? '[STAGING] ' : ''}${message.subject}`,
         text: `${message.title}\n\n${message.intro}\n\n${message.rows.map(([label, value]) => `${label}: ${value}`).join('\n')}`,
         html: `<!doctype html><html><body style="margin:0;background:#f4f7f4;color:#17211b;font-family:Arial,sans-serif"><div style="max-width:680px;margin:0 auto;padding:32px 18px"><div style="background:#fff;border:1px solid #dfe7e1;border-radius:16px;padding:28px"><p style="color:#087a50;font-size:12px;font-weight:800;letter-spacing:.08em">CHRGE${isStaging ? ' · STAGING' : ''}</p><h1 style="font-size:25px">${message.title}</h1><p style="color:#526159;line-height:1.6">${message.intro}</p>${message.customHtml ?? `<table style="width:100%;border-collapse:collapse">${rows}</table>`}</div></div></body></html>`,
-        tags: [{ name: 'purpose', value: message.purpose }, { name: 'environment', value: environment }],
+        tags: [
+          { name: 'purpose', value: message.purpose },
+          { name: 'environment', value: environment },
+        ],
       }),
       signal: AbortSignal.timeout(10_000),
     }).catch(() => null);
-    if (!response?.ok) throw new ServiceUnavailableException('Could not send the CNG notification email');
+    if (!response?.ok)
+      throw new ServiceUnavailableException('Could not send the CNG notification email');
     const result = (await response.json().catch(() => null)) as { id?: string } | null;
-    if (!result?.id) throw new ServiceUnavailableException('Email provider returned an invalid response');
+    if (!result?.id)
+      throw new ServiceUnavailableException('Email provider returned an invalid response');
     return { messageId: result.id };
   }
 
   private escape(value: string): string {
-    return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] ?? character);
+    return value.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] ??
+        character,
+    );
   }
 }

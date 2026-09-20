@@ -11,9 +11,11 @@ import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
 import { AdminCngReviewService } from './admin-cng-review.service';
 import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
 import { CngRepaymentWebhookController } from './cng-repayment-webhook.controller';
+import { AuthModule } from '../auth/auth.module';
+import { CngApplicationOperationsService } from './cng-application-operations.service';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, AuthModule],
   controllers: [
     CngApplicationsController,
     AdminCngApplicationsController,
@@ -28,6 +30,7 @@ import { CngRepaymentWebhookController } from './cng-repayment-webhook.controlle
     StaffAccessGuard,
     AdminCngReviewService,
     AdminAuditInterceptor,
+    CngApplicationOperationsService,
   ],
   exports: [CngApplicationsService],
 })

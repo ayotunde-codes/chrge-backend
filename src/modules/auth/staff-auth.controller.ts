@@ -17,7 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { randomUUID } from 'crypto';
 import { Public } from '../../common/decorators/public.decorator';
-import { StaffLoginDto, StaffLogoutDto, StaffMfaDto } from './dto/staff-auth.dto';
+import { StaffLoginDto, StaffLogoutDto, StaffMfaDto, StaffStepUpDto } from './dto/staff-auth.dto';
 import { StaffAuthService } from './staff-auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { StaffAccessGuard } from '../../common/guards/staff-access.guard';
@@ -54,6 +54,19 @@ export class StaffAuthController {
   @ApiOperation({ summary: 'Verify real TOTP and issue an admin-audience staff session' })
   verify(@Body() dto: StaffMfaDto, @Req() request: Request, @Ip() ip: string) {
     return this.staffAuth.verify(dto, this.meta(request, ip));
+  }
+
+  @Post('step-up')
+  @UseGuards(JwtAuthGuard, StaffAccessGuard)
+  @Throttle({ auth: { limit: 8, ttl: 60000 } })
+  @ApiOperation({ summary: 'Verify TOTP for a single sensitive application operation' })
+  stepUp(
+    @Body() dto: StaffStepUpDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() request: Request,
+    @Ip() ip: string,
+  ) {
+    return this.staffAuth.createStepUp(user.sub, user.role, dto, this.meta(request, ip));
   }
 
   @Post('refresh')

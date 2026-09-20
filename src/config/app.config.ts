@@ -59,6 +59,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  CHRGE_FRONTEND_URL: string = 'https://chrge-frontend-staging.vercel.app';
+
+  @IsString()
+  @IsOptional()
   RESEND_API_KEY: string;
 
   @IsString()

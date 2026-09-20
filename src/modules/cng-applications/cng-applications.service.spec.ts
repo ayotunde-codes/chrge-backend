@@ -5,6 +5,8 @@ import { CngApplicationsService } from './cng-applications.service';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
+import { ResendEmailService } from '../auth/resend-email.service';
+import { ConfigService } from '@nestjs/config';
 import {
   CngEmploymentSector,
   CngEmploymentStatus,
@@ -63,6 +65,10 @@ describe('CngApplicationsService', () => {
     getObject: jest.fn(),
     deleteObject: jest.fn(),
   };
+  const mockEmail = {
+    sendCngApplicationUpdated: jest.fn().mockResolvedValue({ messageId: 'email-1' }),
+  };
+  const mockConfig = { get: jest.fn((_key: string, fallback?: string) => fallback) };
 
   let service: CngApplicationsService;
   let application: ApplicationWithDocuments;
@@ -74,6 +80,8 @@ describe('CngApplicationsService', () => {
       mockSensitive as unknown as SensitiveDataService,
       mockOtpDelivery as unknown as OtpDeliveryService,
       mockDocumentStorage as unknown as DocumentStorageService,
+      mockEmail as unknown as ResendEmailService,
+      mockConfig as unknown as ConfigService,
     );
     application = makeApplication();
   });

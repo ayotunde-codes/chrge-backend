@@ -13,10 +13,11 @@ import {
   Res,
   ServiceUnavailableException,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
@@ -40,6 +41,7 @@ import {
   SavePersonalDetailsDto,
   SaveVehicleDetailsDto,
   VerifyPhoneDto,
+  SubmitAdditionalInformationDto,
 } from './dto/cng-application.dto';
 import {
   CngApplicationDocumentResponseDto,
@@ -47,6 +49,7 @@ import {
   PhoneVerificationResponseDto,
 } from './dto/cng-application-response.dto';
 import { CNG_DOCUMENTS, isCngDocumentType } from './cng-application.constants';
+import { CngApplicationOperationsService } from './cng-application-operations.service';
 
 const APPLICATION_ACCESS_GUARDS = [JwtAuthGuard, CngApplicationAccessGuard];
 @ApiTags('cng-applications')
@@ -55,12 +58,47 @@ export class CngApplicationsController {
   constructor(
     private readonly cngApplicationsService: CngApplicationsService,
     private readonly configService: ConfigService,
+    private readonly operations: CngApplicationOperationsService,
   ) {}
 
   private assertApplicationsEnabled(): void {
     if (this.configService.get<string>('CNG_APPLICATIONS_ENABLED') !== 'true') {
       throw new ServiceUnavailableException('CNG financing applications are temporarily closed');
     }
+  }
+
+  @Get(':id/additional-information')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List additional-information requests for an application' })
+  listAdditionalInformation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.operations.listCustomerRequests(id);
+  }
+
+  @Post(':id/additional-information/:requestId/respond')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024, files: 10 },
+    }),
+  )
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Submit text and/or multiple documents for an information request' })
+  respondToAdditionalInformation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SubmitAdditionalInformationDto,
+    @UploadedFiles() files: Express.Multer.File[] = [],
+  ) {
+    return this.operations.submitInformationResponse(
+      id,
+      requestId,
+      user.sub,
+      dto.textAnswer,
+      files,
+    );
   }
 
   @Get('configuration')

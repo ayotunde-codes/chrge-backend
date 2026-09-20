@@ -68,6 +68,6 @@ import { PasswordResetService } from './password-reset.service';
     ResendEmailService,
     PasswordResetService,
   ],
-  exports: [AuthService, JwtAuthGuard, ResendEmailService],
+  exports: [AuthService, JwtAuthGuard, ResendEmailService, StaffAuthService],
 })
 export class AuthModule {}

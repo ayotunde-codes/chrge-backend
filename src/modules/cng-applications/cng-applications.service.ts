@@ -13,6 +13,8 @@ import {
   Prisma,
 } from '@prisma/client';
 import { createHash, randomBytes, randomInt } from 'crypto';
+import { randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { basename } from 'path';
 import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -40,6 +42,7 @@ import {
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
+import { ResendEmailService } from '../auth/resend-email.service';
 
 type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
   include: { documents: true };
@@ -56,6 +59,8 @@ export class CngApplicationsService {
     private readonly sensitiveData: SensitiveDataService,
     private readonly otpDelivery: OtpDeliveryService,
     private readonly documentStorage: DocumentStorageService,
+    private readonly email: ResendEmailService,
+    private readonly config: ConfigService,
   ) {}
 
   getConfiguration(): Record<string, unknown> {
@@ -188,6 +193,12 @@ export class CngApplicationsService {
       include: { documents: true },
     });
 
+    await this.notifyCustomerUpdate(
+      updated.email,
+      updated.reference,
+      updated.id,
+      'personal and contact information',
+    );
     return this.mapApplication(updated);
   }
 
@@ -195,7 +206,7 @@ export class CngApplicationsService {
     id: string,
     dto: RequestPhoneVerificationDto,
   ): Promise<{ phone: string; expiresAt: Date; developmentCode?: string }> {
-    await this.getEditableApplication(id);
+    const application = await this.getEditableApplication(id);
     const phone = normalizeNigerianPhone(dto.phone);
     const recentChallenge = await this.prisma.cngPhoneVerification.findFirst({
       where: { applicationId: id, phone },
@@ -301,6 +312,12 @@ export class CngApplicationsService {
       include: { documents: true },
     });
 
+    await this.notifyCustomerUpdate(
+      updated.email,
+      updated.reference,
+      updated.id,
+      'vehicle information',
+    );
     return this.mapApplication(updated);
   }
 
@@ -339,6 +356,12 @@ export class CngApplicationsService {
       include: { documents: true },
     });
 
+    await this.notifyCustomerUpdate(
+      updated.email,
+      updated.reference,
+      updated.id,
+      'financing selection',
+    );
     return this.mapApplication(updated);
   }
 
@@ -348,7 +371,7 @@ export class CngApplicationsService {
     file: Express.Multer.File,
     storageKey: string,
   ): Promise<Record<string, unknown>> {
-    await this.getEditableApplication(id);
+    const application = await this.getEditableApplication(id);
     if (!isCngDocumentType(type)) {
       throw new BadRequestException('Unsupported CNG application document type');
     }
@@ -414,11 +437,17 @@ export class CngApplicationsService {
       await this.documentStorage.deleteObject(existing.storageKey);
     }
 
+    await this.notifyCustomerUpdate(
+      application.email,
+      application.reference,
+      application.id,
+      `document:${type}`,
+    );
     return this.mapDocument(document);
   }
 
   async deleteDocument(id: string, type: string): Promise<void> {
-    await this.getEditableApplication(id);
+    const application = await this.getEditableApplication(id);
     if (!isCngDocumentType(type)) {
       throw new BadRequestException('Unsupported CNG application document type');
     }
@@ -432,6 +461,12 @@ export class CngApplicationsService {
 
     await this.prisma.cngApplicationDocument.delete({ where: { id: existing.id } });
     await this.documentStorage.deleteObject(existing.storageKey);
+    await this.notifyCustomerUpdate(
+      application.email,
+      application.reference,
+      application.id,
+      `document removed:${type}`,
+    );
   }
 
   async getDocumentForDownload(
@@ -894,6 +929,29 @@ export class CngApplicationsService {
 
   private generateReference(): string {
     return `CNG-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+  }
+
+  private async notifyCustomerUpdate(
+    email: string | null,
+    reference: string,
+    applicationId: string,
+    field: string,
+  ) {
+    if (!email) return;
+    const base = this.config.get<string>(
+      'CHRGE_FRONTEND_URL',
+      'https://chrge-frontend-staging.vercel.app',
+    );
+    await this.email
+      .sendCngApplicationUpdated({
+        to: email,
+        notificationId: randomUUID(),
+        reference,
+        updatedBy: 'customer',
+        changedFields: [field],
+        dashboardUrl: `${base}/cng/dashboard/${applicationId}`,
+      })
+      .catch(() => undefined);
   }
 
   private calculateAge(dateOfBirth: Date): number {

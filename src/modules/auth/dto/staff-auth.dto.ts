@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsUUID, Matches, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 export class StaffLoginDto {
   @IsEmail() email: string;
   @IsString() password: string;
@@ -16,4 +16,21 @@ export class StaffLogoutDto {
   @IsString()
   @MinLength(32)
   refreshToken: string;
+}
+
+export class StaffStepUpDto {
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'code must be a six-digit authenticator code' })
+  code: string;
+
+  @IsIn(['EDIT_APPLICATION', 'REPLACE_DOCUMENT', 'EXPORT_APPLICATION'])
+  action: 'EDIT_APPLICATION' | 'REPLACE_DOCUMENT' | 'EXPORT_APPLICATION';
+
+  @IsUUID()
+  resourceId: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
 }

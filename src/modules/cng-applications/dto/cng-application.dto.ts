@@ -9,6 +9,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsOptional,
+  IsObject,
   IsString,
   Matches,
   Max,
@@ -310,6 +311,51 @@ export class SubmitCngReviewNoteDto {
   @MinLength(2)
   @MaxLength(2000)
   note: string;
+}
+
+export class RequestAdditionalInformationDto {
+  @IsString()
+  @MinLength(5)
+  @MaxLength(2000)
+  question: string;
+
+  @IsBoolean()
+  allowText: boolean;
+
+  @IsBoolean()
+  allowDocuments: boolean;
+}
+
+export class SubmitAdditionalInformationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  textAnswer?: string;
+}
+
+export class AdminEditCngApplicationDto {
+  @IsObject()
+  changes: Record<string, unknown>;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
+
+  @IsString()
+  @MinLength(32)
+  stepUpToken: string;
+}
+
+export class AdminStepUpOperationDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
+
+  @IsString()
+  @MinLength(32)
+  stepUpToken: string;
 }
 
 export class AdvanceCngWorkflowDto {

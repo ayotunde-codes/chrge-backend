@@ -1,11 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TokenService } from './token.service';
-import { StaffLoginDto, StaffMfaDto } from './dto/staff-auth.dto';
+import { StaffLoginDto, StaffMfaDto, StaffStepUpDto } from './dto/staff-auth.dto';
 import { decryptStaffMfaSecret, staffRecoveryCodeHash, verifyStaffTotp } from './staff-mfa';
 
 interface Meta {
@@ -176,6 +176,65 @@ export class StaffAuthService {
       mfaVerified: true,
       user: { id: result.user.id, email: result.user.email, role: result.staffRole },
     };
+  }
+
+  async createStepUp(userId: string, role: string, dto: StaffStepUpDto, meta: Meta) {
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      throw new UnauthorizedException('Administrator role required');
+    }
+    const staff = await this.prisma.staffProfile.findUnique({ where: { userId } });
+    if (!staff?.mfaSecretEncrypted || staff.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Active MFA enrollment required');
+    }
+    const valid = verifyStaffTotp(
+      decryptStaffMfaSecret(this.config, staff.mfaSecretEncrypted),
+      dto.code,
+    );
+    if (!valid) throw new UnauthorizedException('Invalid authenticator code');
+
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+    await this.prisma.staffStepUpToken.create({
+      data: {
+        userId,
+        tokenHash: createHash('sha256').update(token).digest('hex'),
+        action: dto.action,
+        resourceId: dto.resourceId,
+        expiresAt,
+      },
+    });
+    await this.audit.create(
+      { actorId: userId, requestId: meta.requestId, ipAddress: meta.ip, userAgent: meta.userAgent },
+      {
+        action: 'staff.step_up_succeeded',
+        targetType: 'cng_application',
+        targetId: dto.resourceId,
+        reason: dto.reason,
+        sensitivity: 'RESTRICTED' as never,
+        metadata: { authorizedAction: dto.action },
+      },
+    );
+    return { token, expiresAt, action: dto.action, resourceId: dto.resourceId };
+  }
+
+  async consumeStepUp(
+    token: string,
+    userId: string,
+    action: StaffStepUpDto['action'],
+    resourceId: string,
+  ): Promise<void> {
+    const result = await this.prisma.staffStepUpToken.updateMany({
+      where: {
+        tokenHash: createHash('sha256').update(token).digest('hex'),
+        userId,
+        action,
+        resourceId,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { consumedAt: new Date() },
+    });
+    if (result.count !== 1) throw new UnauthorizedException('Invalid or expired step-up token');
   }
   sessions(userId: string) {
     return this.tokens.listAdminSessions(userId);

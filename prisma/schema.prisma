@@ -94,6 +94,13 @@ enum DocumentScanStatus {
   FAILED
 }
 
+enum CngAdditionalInformationStatus {
+  AWAITING_RESPONSE
+  SUBMITTED
+  REOPENED
+  CANCELLED
+}
+
 enum StationType {
   EV
   CNG
@@ -814,6 +821,10 @@ model CngApplication {
   applicant          User                     @relation("CngApplicant", fields: [userId], references: [id], onDelete: Cascade)
   reviewer           User?                    @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
   documents          CngApplicationDocument[]
+  documentVersions   CngApplicationDocumentVersion[]
+  additionalInformationRequests CngAdditionalInformationRequest[]
+  revisions          CngApplicationRevision[]
+  exports            CngApplicationExport[]
   phoneVerifications CngPhoneVerification[]
   reviewNotes        CngApplicationReviewNote[]
   installments       CngInstallment[]
@@ -878,6 +889,132 @@ model CngApplicationDocument {
   @@unique([applicationId, type])
   @@index([applicationId])
   @@map("cng_application_documents")
+}
+
+model CngApplicationDocumentVersion {
+  id             String             @id @default(uuid())
+  applicationId  String
+  documentId     String
+  version        Int
+  originalName   String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  checksumSha256 String
+  scanStatus     DocumentScanStatus
+  uploadedAt     DateTime
+  replacedAt     DateTime           @default(now())
+  replacedBy     String
+  reason         String
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([applicationId, replacedAt])
+  @@map("cng_application_document_versions")
+}
+
+model CngAdditionalInformationRequest {
+  id             String                         @id @default(uuid())
+  applicationId  String
+  question       String
+  allowText      Boolean                        @default(false)
+  allowDocuments Boolean                        @default(false)
+  status         CngAdditionalInformationStatus @default(AWAITING_RESPONSE)
+  requestedBy    String
+  requestedAt    DateTime                       @default(now())
+  respondedAt    DateTime?
+  reopenedAt     DateTime?
+  cancelledAt    DateTime?
+
+  application CngApplication                      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  responses   CngAdditionalInformationResponse[]
+
+  @@index([applicationId, requestedAt])
+  @@map("cng_additional_information_requests")
+}
+
+model CngAdditionalInformationResponse {
+  id          String   @id @default(uuid())
+  requestId   String
+  userId      String
+  textAnswer  String?
+  submittedAt DateTime @default(now())
+
+  request   CngAdditionalInformationRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  documents CngAdditionalInformationDocument[]
+
+  @@index([requestId, submittedAt])
+  @@map("cng_additional_information_responses")
+}
+
+model CngAdditionalInformationDocument {
+  id             String             @id @default(uuid())
+  responseId     String
+  originalName   String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  checksumSha256 String
+  scanStatus     DocumentScanStatus @default(PENDING)
+  scannedAt      DateTime?
+  scannerVersion String?
+  uploadedAt     DateTime           @default(now())
+
+  response CngAdditionalInformationResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+  @@map("cng_additional_information_documents")
+}
+
+model CngApplicationRevision {
+  id            String   @id @default(uuid())
+  applicationId String
+  actorId       String
+  actorRole     String
+  reason        String
+  changedFields Json
+  beforeValues  Json
+  afterValues   Json
+  createdAt     DateTime @default(now())
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("cng_application_revisions")
+}
+
+model CngApplicationExport {
+  id            String   @id @default(uuid())
+  applicationId String
+  createdBy     String
+  storageKey    String
+  filename      String
+  sizeBytes     Int
+  snapshotHash  String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  application CngApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@index([expiresAt])
+  @@map("cng_application_exports")
+}
+
+model StaffStepUpToken {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  action     String
+  resourceId String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, action, resourceId])
+  @@index([expiresAt])
+  @@map("staff_step_up_tokens")
 }
 
 model CngPhoneVerification {
