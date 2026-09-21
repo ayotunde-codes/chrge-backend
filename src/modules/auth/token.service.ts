@@ -50,6 +50,9 @@ export class TokenService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      audience: 'chrge-consumer',
+      mfa: false,
+      environment: this.configService.get<string>('NODE_ENV', 'development'),
     };
 
     // Generate access token
@@ -71,6 +74,8 @@ export class TokenService {
         userAgent: meta.userAgent,
         ipAddress: meta.ip,
         expiresAt,
+        audience: 'chrge-consumer',
+        environment: this.configService.get<string>('NODE_ENV', 'development'),
       },
     });
 
@@ -79,6 +84,36 @@ export class TokenService {
       refreshToken,
       expiresIn: this.accessTokenExpirationMinutes * 60, // in seconds
     };
+  }
+
+  async generateAdminTokens(user: User, staffRole: string, meta: RequestMeta): Promise<TokenPair> {
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: staffRole,
+      audience: 'chrge-admin',
+      mfa: true,
+      mfaAt: Math.floor(Date.now() / 1000),
+      environment: this.configService.get<string>('NODE_ENV', 'development'),
+    };
+    const expiresIn = Math.min(this.accessTokenExpirationMinutes, 15) * 60;
+    const accessToken = this.jwtService.sign(payload, { expiresIn });
+    const refreshToken = generateSecureToken();
+    const tokenHash = hashRefreshToken(refreshToken, this.refreshTokenPepper);
+    const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    await this.prisma.refreshToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        userAgent: meta.userAgent,
+        ipAddress: meta.ip,
+        expiresAt,
+        audience: 'chrge-admin',
+        environment: this.configService.get<string>('NODE_ENV', 'development'),
+        mfaVerifiedAt: new Date(),
+      },
+    });
+    return { accessToken, refreshToken, expiresIn };
   }
 
   /**
@@ -103,7 +138,7 @@ export class TokenService {
 
     if (storedToken.revokedAt) {
       // Token reuse detected - potentially compromised
-      this.logger.warn(`Refresh token reuse detected for user: ${storedToken.userId}`);
+      this.logger.warn('Refresh token reuse detected; revoking the associated sessions');
       // Revoke all tokens for this user as a security measure
       await this.revokeAllUserTokens(storedToken.userId);
       throw new UnauthorizedException('Token has been revoked. Please login again.');
@@ -133,6 +168,83 @@ export class TokenService {
       ...tokens,
       user: storedToken.user,
     };
+  }
+
+  async rotateAdminRefreshToken(
+    refreshToken: string,
+    meta: RequestMeta,
+  ): Promise<TokenPair & { user: User; staffRole: string }> {
+    const tokenHash = hashRefreshToken(refreshToken, this.refreshTokenPepper);
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: { include: { staffProfile: { include: { role: true } } } } },
+    });
+    const environment = this.configService.get<string>('NODE_ENV', 'development');
+    if (
+      !stored ||
+      stored.audience !== 'chrge-admin' ||
+      stored.environment !== environment ||
+      stored.expiresAt < new Date() ||
+      !stored.mfaVerifiedAt
+    )
+      throw new UnauthorizedException('Invalid staff session');
+    if (stored.revokedAt) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: stored.userId, audience: 'chrge-admin', revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw new UnauthorizedException('Invalid staff session');
+    }
+    const staff = stored.user.staffProfile;
+    if (stored.user.deletedAt || !staff || staff.status !== 'ACTIVE' || !staff.mfaEnabledAt)
+      throw new UnauthorizedException('Invalid staff session');
+    await this.prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date() },
+    });
+    const next = await this.generateAdminTokens(stored.user, staff.role.id, meta);
+    return { ...next, user: stored.user, staffRole: staff.role.id };
+  }
+
+  listAdminSessions(userId: string) {
+    return this.prisma.refreshToken.findMany({
+      where: { userId, audience: 'chrge-admin', revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        userAgent: true,
+        ipAddress: true,
+        createdAt: true,
+        expiresAt: true,
+        mfaVerifiedAt: true,
+      },
+    });
+  }
+
+  async revokeAdminSession(userId: string, sessionId?: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        audience: 'chrge-admin',
+        revokedAt: null,
+        ...(sessionId ? { id: sessionId } : {}),
+      },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  async revokeAdminRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    const tokenHash = hashRefreshToken(refreshToken, this.refreshTokenPepper);
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        tokenHash,
+        userId,
+        audience: 'chrge-admin',
+        environment: this.configService.get<string>('NODE_ENV', 'development'),
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
   }
 
   /**

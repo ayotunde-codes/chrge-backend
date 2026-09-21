@@ -11,11 +11,13 @@ import {
   Patch,
   Post,
   Res,
+  ServiceUnavailableException,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
@@ -28,6 +30,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
@@ -38,6 +41,7 @@ import {
   SavePersonalDetailsDto,
   SaveVehicleDetailsDto,
   VerifyPhoneDto,
+  SubmitAdditionalInformationDto,
 } from './dto/cng-application.dto';
 import {
   CngApplicationDocumentResponseDto,
@@ -45,16 +49,61 @@ import {
   PhoneVerificationResponseDto,
 } from './dto/cng-application-response.dto';
 import { CNG_DOCUMENTS, isCngDocumentType } from './cng-application.constants';
+import { CngApplicationOperationsService } from './cng-application-operations.service';
 
 const APPLICATION_ACCESS_GUARDS = [JwtAuthGuard, CngApplicationAccessGuard];
 @ApiTags('cng-applications')
 @Controller('cng/applications')
 export class CngApplicationsController {
-  constructor(private readonly cngApplicationsService: CngApplicationsService) {}
+  constructor(
+    private readonly cngApplicationsService: CngApplicationsService,
+    private readonly configService: ConfigService,
+    private readonly operations: CngApplicationOperationsService,
+  ) {}
+
+  private assertApplicationsEnabled(): void {
+    if (this.configService.get<string>('CNG_APPLICATIONS_ENABLED') !== 'true') {
+      throw new ServiceUnavailableException('CNG financing applications are temporarily closed');
+    }
+  }
+
+  @Get(':id/additional-information')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List additional-information requests for an application' })
+  listAdditionalInformation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.operations.listCustomerRequests(id);
+  }
+
+  @Post(':id/additional-information/:requestId/respond')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024, files: 10 },
+    }),
+  )
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Submit text and/or multiple documents for an information request' })
+  respondToAdditionalInformation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SubmitAdditionalInformationDto,
+    @UploadedFiles() files: Express.Multer.File[] = [],
+  ) {
+    return this.operations.submitInformationResponse(
+      id,
+      requestId,
+      user.sub,
+      dto.textAnswer,
+      files,
+    );
+  }
 
   @Get('configuration')
   @ApiOperation({ summary: 'Get CNG packages, financing plans, and document rules' })
-  getConfiguration(): Record<string, unknown> {
+  getConfiguration(): Promise<Record<string, unknown>> {
     return this.cngApplicationsService.getConfiguration();
   }
 
@@ -64,6 +113,7 @@ export class CngApplicationsController {
   @ApiOperation({ summary: 'Create a CNG financing application draft' })
   @ApiResponse({ status: 201, type: CngApplicationResponseDto })
   async createApplication(@CurrentUser() user: JwtPayload): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.createApplication(user.sub);
   }
 
@@ -94,6 +144,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SavePersonalDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.savePersonalDetails(id, dto);
   }
 
@@ -108,6 +159,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RequestPhoneVerificationDto,
   ): Promise<{ phone: string; expiresAt: Date; developmentCode?: string }> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.requestPhoneVerification(id, dto);
   }
 
@@ -121,6 +173,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VerifyPhoneDto,
   ): Promise<{ verified: true }> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.verifyPhone(id, dto);
   }
 
@@ -133,18 +186,20 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SaveVehicleDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.saveVehicleDetails(id, dto);
   }
 
   @Patch(':id/financing')
   @UseGuards(...APPLICATION_ACCESS_GUARDS)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Save package, financing, loan tenor, and privacy consent' })
+  @ApiOperation({ summary: 'Save package, deposit-based financing plan, and privacy consent' })
   @ApiResponse({ status: 200, type: CngApplicationResponseDto })
   async saveFinancingDetails(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SaveFinancingDetailsDto,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.saveFinancingDetails(id, dto);
   }
 
@@ -186,6 +241,7 @@ export class CngApplicationsController {
     @Param('type') type: string,
     @UploadedFile() file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     if (!file) throw new BadRequestException('No document file provided');
     const extensionByMime: Record<string, string> = {
       'image/jpeg': '.jpg',
@@ -205,6 +261,7 @@ export class CngApplicationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('type') type: string,
   ): Promise<void> {
+    this.assertApplicationsEnabled();
     await this.cngApplicationsService.deleteDocument(id, type);
   }
 
@@ -240,6 +297,7 @@ export class CngApplicationsController {
   async submitApplication(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Record<string, unknown>> {
+    this.assertApplicationsEnabled();
     return this.cngApplicationsService.submitApplication(id);
   }
 

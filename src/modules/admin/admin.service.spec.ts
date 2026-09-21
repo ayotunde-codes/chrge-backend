@@ -4,6 +4,8 @@ import { ConnectorType, PortStatus, ChargerType, PowertrainType } from '@prisma/
 
 import { AdminService } from './admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -19,6 +21,7 @@ describe('AdminService', () => {
     },
     station: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -33,6 +36,12 @@ describe('AdminService', () => {
       update: jest.fn(),
       count: jest.fn(),
     },
+  };
+  const mockAudit = { create: jest.fn() };
+  const mockCacheManager = {
+    get: jest.fn().mockResolvedValue(0),
+    set: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockBrand = {
@@ -126,7 +135,12 @@ describe('AdminService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AdminService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        AdminService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AuditService, useValue: mockAudit },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
+      ],
     }).compile();
 
     service = module.get<AdminService>(AdminService);
@@ -242,6 +256,20 @@ describe('AdminService', () => {
   // ============================================================================
   // STATIONS
   // ============================================================================
+
+  describe('listStations', () => {
+    it('prioritizes CNG-capable stations before EV stations', async () => {
+      mockPrismaService.station.findMany.mockResolvedValue([]);
+
+      await service.listStations({ order: 'newest' } as never);
+
+      expect(mockPrismaService.station.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ stationType: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        }),
+      );
+    });
+  });
 
   describe('createStation', () => {
     const createStationDto = {

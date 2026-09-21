@@ -5,6 +5,9 @@ import { CngApplicationsService } from './cng-applications.service';
 import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
+import { ResendEmailService } from '../auth/resend-email.service';
+import { ConfigService } from '@nestjs/config';
+import { CngFinancingConfigurationService } from './cng-financing-configuration.service';
 import {
   CngEmploymentSector,
   CngEmploymentStatus,
@@ -40,6 +43,14 @@ describe('CngApplicationsService', () => {
       upsert: jest.fn(),
       delete: jest.fn(),
     },
+    cngApplicationReviewNote: {
+      create: jest.fn(),
+    },
+    cngInstallment: {
+      createMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
   const mockSensitive = {
@@ -55,6 +66,20 @@ describe('CngApplicationsService', () => {
     getObject: jest.fn(),
     deleteObject: jest.fn(),
   };
+  const mockEmail = {
+    sendCngApplicationUpdated: jest.fn().mockResolvedValue({ messageId: 'email-1' }),
+  };
+  const mockConfig = { get: jest.fn((_key: string, fallback?: string) => fallback) };
+  const publicPackages = [
+    { id: 'A', name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 850000, financingPlans: [] },
+    { id: 'B', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 1100000, financingPlans: [] },
+    { id: 'C', name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 1400000, financingPlans: [] },
+    { id: 'D', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 2000000, financingPlans: [] },
+  ];
+  const mockFinancing = {
+    publicPackages: jest.fn().mockResolvedValue(publicPackages),
+    findPublishedQuote: jest.fn(),
+  };
 
   let service: CngApplicationsService;
   let application: ApplicationWithDocuments;
@@ -66,21 +91,19 @@ describe('CngApplicationsService', () => {
       mockSensitive as unknown as SensitiveDataService,
       mockOtpDelivery as unknown as OtpDeliveryService,
       mockDocumentStorage as unknown as DocumentStorageService,
+      mockEmail as unknown as ResendEmailService,
+      mockConfig as unknown as ConfigService,
+      mockFinancing as unknown as CngFinancingConfigurationService,
     );
     application = makeApplication();
   });
 
-  it('returns all four conversion packages in capacity order', () => {
-    const configuration = service.getConfiguration() as {
+  it('returns all active published conversion packages in configured order', async () => {
+    const configuration = (await service.getConfiguration()) as {
       packages: Array<{ id: string; name: string; tank: string; priceNgn: number }>;
     };
 
-    expect(configuration.packages).toEqual([
-      { id: 'A', name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 85000 },
-      { id: 'B', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 110000 },
-      { id: 'C', name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 140000 },
-      { id: 'D', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 200000 },
-    ]);
+    expect(configuration.packages).toEqual(publicPackages);
   });
 
   it('creates a draft owned by the authenticated user', async () => {
@@ -203,18 +226,30 @@ describe('CngApplicationsService', () => {
   });
 
   it('calculates and snapshots financing values on the server', async () => {
+    mockFinancing.findPublishedQuote.mockResolvedValue({
+      version: { id: 'B-v2', name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 1100000 },
+      term: { name: 'Gold Plan', depositPct: 50, tenureMonths: 6, interestRateBps: 1000 },
+      quote: {
+        depositAmountNgn: 550000,
+        financedAmountNgn: 550000,
+        interestAmountNgn: 55000,
+        weeklyPaymentNgn: 23269,
+        totalCostNgn: 1155000,
+        installmentCount: 26,
+      },
+    });
     mockPrisma.cngApplication.findUnique.mockResolvedValue(application);
     mockPrisma.cngApplication.update.mockResolvedValue({
       ...application,
       packageId: 'B',
       financingPlanId: CngFinancingPlan.Gold,
       preferredLoanTenor: 6,
-      packagePriceNgn: 110000,
-      depositAmountNgn: 55000,
-      financedAmountNgn: 55000,
-      interestAmountNgn: 11000,
-      monthlyPaymentNgn: 11000,
-      totalCostNgn: 121000,
+      packagePriceNgn: 1100000,
+      depositAmountNgn: 550000,
+      financedAmountNgn: 550000,
+      interestAmountNgn: 55000,
+      weeklyPaymentNgn: 23269,
+      totalCostNgn: 1155000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
       financingCompletedAt: new Date(),
@@ -223,37 +258,49 @@ describe('CngApplicationsService', () => {
     await service.saveFinancingDetails(application.id, {
       packageId: 'B',
       financingPlanId: CngFinancingPlan.Gold,
-      preferredLoanTenor: 6,
       privacyConsent: true,
     });
 
     expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          packagePriceNgn: 110000,
-          depositAmountNgn: 55000,
-          financedAmountNgn: 55000,
-          interestAmountNgn: 11000,
-          monthlyPaymentNgn: 11000,
-          totalCostNgn: 121000,
+          preferredLoanTenor: 6,
+          packagePriceNgn: 1100000,
+          depositAmountNgn: 550000,
+          financedAmountNgn: 550000,
+          interestAmountNgn: 55000,
+          weeklyPaymentNgn: 23269,
+          totalCostNgn: 1155000,
         }),
       }),
     );
   });
 
   it('accepts Max 100 and calculates its financing snapshot', async () => {
+    mockFinancing.findPublishedQuote.mockResolvedValue({
+      version: { id: 'D-v2', name: 'Max 100', tank: '100 Litre Tank', priceNgn: 2000000 },
+      term: { name: 'Bronze Plan', depositPct: 10, tenureMonths: 12, interestRateBps: 2000 },
+      quote: {
+        depositAmountNgn: 200000,
+        financedAmountNgn: 1800000,
+        interestAmountNgn: 360000,
+        weeklyPaymentNgn: 41538,
+        totalCostNgn: 2360000,
+        installmentCount: 52,
+      },
+    });
     mockPrisma.cngApplication.findUnique.mockResolvedValue(application);
     mockPrisma.cngApplication.update.mockResolvedValue({
       ...application,
       packageId: 'D',
       financingPlanId: CngFinancingPlan.Bronze,
       preferredLoanTenor: 12,
-      packagePriceNgn: 200000,
-      depositAmountNgn: 20000,
-      financedAmountNgn: 180000,
-      interestAmountNgn: 40000,
-      monthlyPaymentNgn: 18333,
-      totalCostNgn: 240000,
+      packagePriceNgn: 2000000,
+      depositAmountNgn: 200000,
+      financedAmountNgn: 1800000,
+      interestAmountNgn: 360000,
+      weeklyPaymentNgn: 41538,
+      totalCostNgn: 2360000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
       financingCompletedAt: new Date(),
@@ -262,7 +309,6 @@ describe('CngApplicationsService', () => {
     await service.saveFinancingDetails(application.id, {
       packageId: 'D',
       financingPlanId: CngFinancingPlan.Bronze,
-      preferredLoanTenor: 12,
       privacyConsent: true,
     });
 
@@ -270,12 +316,13 @@ describe('CngApplicationsService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           packageId: 'D',
-          packagePriceNgn: 200000,
-          depositAmountNgn: 20000,
-          financedAmountNgn: 180000,
-          interestAmountNgn: 40000,
-          monthlyPaymentNgn: 18333,
-          totalCostNgn: 240000,
+          preferredLoanTenor: 12,
+          packagePriceNgn: 2000000,
+          depositAmountNgn: 200000,
+          financedAmountNgn: 1800000,
+          interestAmountNgn: 360000,
+          weeklyPaymentNgn: 41538,
+          totalCostNgn: 2360000,
         }),
       }),
     );
@@ -398,7 +445,7 @@ describe('CngApplicationsService', () => {
     expect(mockDocumentStorage.putObject).not.toHaveBeenCalled();
   });
 
-  it('returns PII-minimized summaries from the administrative list', async () => {
+  it('returns the applicant email in administrative list summaries', async () => {
     mockPrisma.cngApplication.findMany.mockResolvedValue([
       {
         ...application,
@@ -418,12 +465,87 @@ describe('CngApplicationsService', () => {
 
     expect(result.applications[0]).toEqual(
       expect.objectContaining({
-        applicant: expect.objectContaining({ email: 'emeka@example.com' }),
+        applicant: expect.objectContaining({ email: 'emeka@example.com', phone: '••••••5678' }),
       }),
     );
     expect(result.applications[0]).not.toHaveProperty('personal');
     expect(result.applications[0]).not.toHaveProperty('documents');
     expect(JSON.stringify(result.applications[0])).not.toContain('8901');
+  });
+
+  it('starts review without approving the application', async () => {
+    const submitted = { ...application, status: CngApplicationStatus.SUBMITTED };
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(submitted);
+    mockPrisma.cngApplication.update.mockResolvedValue({
+      ...submitted,
+      status: CngApplicationStatus.UNDER_REVIEW,
+      reviewedBy: 'admin-1',
+      reviewedAt: new Date(),
+    });
+
+    await service.reviewApplication(application.id, 'admin-1', {
+      status: CngApplicationStatus.UNDER_REVIEW,
+    });
+
+    expect(mockPrisma.cngApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: CngApplicationStatus.UNDER_REVIEW }),
+      }),
+    );
+  });
+
+  it('stores internal review notes as append-only history', async () => {
+    mockPrisma.cngApplication.findUnique.mockResolvedValue({
+      ...application,
+      status: CngApplicationStatus.UNDER_REVIEW,
+    });
+    mockPrisma.cngApplicationReviewNote.create.mockResolvedValue({});
+
+    await service.submitReviewNote(application.id, 'admin-1', { note: '  Checks completed.  ' });
+
+    expect(mockPrisma.cngApplicationReviewNote.create).toHaveBeenCalledWith({
+      data: { applicationId: application.id, authorId: 'admin-1', note: 'Checks completed.' },
+    });
+  });
+
+  it('prevents rejection after finance has been disbursed', async () => {
+    mockPrisma.cngApplication.findUnique.mockResolvedValue({
+      ...application,
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    await expect(
+      service.reviewApplication(application.id, 'admin-1', {
+        status: CngApplicationStatus.REJECTED,
+        rejectionReason: 'The application failed the final checks.',
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('creates a weekly repayment schedule when finance is disbursed', async () => {
+    const financed = {
+      ...application,
+      status: CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+      preferredLoanTenor: 6,
+      financedAmountNgn: 550000,
+      interestAmountNgn: 110000,
+      weeklyPaymentNgn: 25385,
+    };
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(financed);
+    mockPrisma.cngApplication.update.mockResolvedValue({
+      ...financed,
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    await service.advanceWorkflow(application.id, {
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    const schedule = mockPrisma.cngInstallment.createMany.mock.calls[0][0].data;
+    expect(schedule).toHaveLength(26);
+    expect(schedule[0].amountNgn).toBe(25385);
+    expect(schedule[25].amountNgn).toBe(25375);
+    expect(schedule[1].dueAt.getTime() - schedule[0].dueAt.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
   });
 });
 
@@ -477,13 +599,20 @@ function makeApplication(): ApplicationWithDocuments {
     engineNumber: null,
     vehicleCompletedAt: null,
     packageId: null,
+    financingConfigVersionId: null,
+    packageNameSnapshot: null,
+    packageTankSnapshot: null,
     financingPlanId: null,
+    financingPlanNameSnapshot: null,
+    depositPctSnapshot: null,
+    interestRateBpsSnapshot: null,
+    installmentCountSnapshot: null,
     preferredLoanTenor: null,
     packagePriceNgn: null,
     depositAmountNgn: null,
     financedAmountNgn: null,
     interestAmountNgn: null,
-    monthlyPaymentNgn: null,
+    weeklyPaymentNgn: null,
     totalCostNgn: null,
     privacyConsentAt: null,
     privacyPolicyVersion: null,
@@ -493,6 +622,12 @@ function makeApplication(): ApplicationWithDocuments {
     reviewedBy: null,
     reviewNote: null,
     rejectionReason: null,
+    inspectionAppointmentAt: null,
+    financingApprovedAt: null,
+    conversionAppointmentAt: null,
+    financeDisbursedAt: null,
+    conversionCompletedAt: null,
+    fullyPaidAt: null,
     cancelledAt: null,
     createdAt: now,
     updatedAt: now,

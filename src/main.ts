@@ -3,6 +3,9 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+// cookie-parser exposes CommonJS at runtime; TypeScript's default import compiles
+// but is not callable in the production image.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 import cookieParser = require('cookie-parser');
 import { join } from 'path';
 import { AppModule } from './app.module';
@@ -40,7 +43,14 @@ async function bootstrap() {
       .filter(Boolean),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Request-Id',
+      'Idempotency-Key',
+      'X-CSRF-Token',
+    ],
   });
 
   // Global prefix
