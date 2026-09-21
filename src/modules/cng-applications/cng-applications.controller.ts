@@ -103,7 +103,7 @@ export class CngApplicationsController {
 
   @Get('configuration')
   @ApiOperation({ summary: 'Get CNG packages, financing plans, and document rules' })
-  getConfiguration(): Record<string, unknown> {
+  getConfiguration(): Promise<Record<string, unknown>> {
     return this.cngApplicationsService.getConfiguration();
   }
 

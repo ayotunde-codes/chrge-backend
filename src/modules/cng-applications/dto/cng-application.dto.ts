@@ -21,7 +21,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CngApplicationStatus } from '@prisma/client';
 import {
   CNG_INCOME_RANGES,
-  CNG_PACKAGE_IDS,
   CngEmploymentSector,
   CngEmploymentStatus,
   CngEngineType,
@@ -225,13 +224,15 @@ export class SaveVehicleDetailsDto {
 }
 
 export class SaveFinancingDetailsDto {
-  @ApiProperty({ enum: CNG_PACKAGE_IDS, example: 'B' })
-  @IsIn(CNG_PACKAGE_IDS)
-  packageId: (typeof CNG_PACKAGE_IDS)[number];
+  @ApiProperty({ example: 'B' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  packageId: string;
 
   @ApiProperty({ enum: CngFinancingPlan, example: CngFinancingPlan.Gold })
-  @IsEnum(CngFinancingPlan)
-  financingPlanId: CngFinancingPlan;
+  @IsIn(Object.values(CngFinancingPlan))
+  financingPlanId: string;
 
   @ApiProperty({ example: true })
   @Equals(true, { message: 'privacyConsent must be accepted' })

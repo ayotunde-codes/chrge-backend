@@ -23,10 +23,23 @@ export class StaffStepUpDto {
   @Matches(/^\d{6}$/, { message: 'code must be a six-digit authenticator code' })
   code: string;
 
-  @IsIn(['EDIT_APPLICATION', 'REPLACE_DOCUMENT', 'EXPORT_APPLICATION'])
-  action: 'EDIT_APPLICATION' | 'REPLACE_DOCUMENT' | 'EXPORT_APPLICATION';
+  @IsIn([
+    'EDIT_APPLICATION',
+    'REPLACE_DOCUMENT',
+    'EXPORT_APPLICATION',
+    'PUBLISH_FINANCING_CONFIG',
+    'TOGGLE_FINANCING_PLAN',
+  ])
+  action:
+    | 'EDIT_APPLICATION'
+    | 'REPLACE_DOCUMENT'
+    | 'EXPORT_APPLICATION'
+    | 'PUBLISH_FINANCING_CONFIG'
+    | 'TOGGLE_FINANCING_PLAN';
 
-  @IsUUID()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   resourceId: string;
 
   @IsString()

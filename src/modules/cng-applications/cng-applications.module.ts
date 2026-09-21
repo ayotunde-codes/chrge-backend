@@ -13,12 +13,15 @@ import { AdminAuditInterceptor } from '../audit/admin-audit.interceptor';
 import { CngRepaymentWebhookController } from './cng-repayment-webhook.controller';
 import { AuthModule } from '../auth/auth.module';
 import { CngApplicationOperationsService } from './cng-application-operations.service';
+import { AdminCngFinancingController } from './admin-cng-financing.controller';
+import { CngFinancingConfigurationService } from './cng-financing-configuration.service';
 
 @Module({
   imports: [ConfigModule, AuthModule],
   controllers: [
     CngApplicationsController,
     AdminCngApplicationsController,
+    AdminCngFinancingController,
     CngRepaymentWebhookController,
   ],
   providers: [
@@ -31,6 +34,7 @@ import { CngApplicationOperationsService } from './cng-application-operations.se
     AdminCngReviewService,
     AdminAuditInterceptor,
     CngApplicationOperationsService,
+    CngFinancingConfigurationService,
   ],
   exports: [CngApplicationsService],
 })

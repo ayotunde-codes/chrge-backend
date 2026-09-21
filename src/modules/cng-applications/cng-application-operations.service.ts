@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuditSensitivity, DocumentScanStatus, Prisma, UserRole } from '@prisma/client';
+import { AuditSensitivity, DocumentScanStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -26,8 +26,6 @@ import {
 import { DocumentStorageService } from './document-storage.service';
 import { SensitiveDataService } from './sensitive-data.service';
 import { CNG_REPAYMENT_FREQUENCY, cngInstallmentCount } from './cng-application.constants';
-
-type StepUpAction = 'EDIT_APPLICATION' | 'REPLACE_DOCUMENT' | 'EXPORT_APPLICATION';
 
 const EDITABLE_FIELDS = new Set([
   'firstName',
@@ -783,11 +781,14 @@ export class CngApplicationOperationsService {
       line(label, value);
     section('Financing and workflow');
     for (const [label, value] of Object.entries({
-      Package: app.packageId,
-      Plan: app.financingPlanId,
+      Package: app.packageNameSnapshot ?? app.packageId,
+      'Package specification': app.packageTankSnapshot,
+      Plan: app.financingPlanNameSnapshot ?? app.financingPlanId,
+      'Configuration version': app.financingConfigVersionId,
       'Loan tenor (months)': app.preferredLoanTenor,
       'Repayment frequency': app.preferredLoanTenor ? CNG_REPAYMENT_FREQUENCY : null,
-      'Number of installments': cngInstallmentCount(app.preferredLoanTenor),
+      'Number of installments':
+        app.installmentCountSnapshot ?? cngInstallmentCount(app.preferredLoanTenor),
       'Package price': app.packagePriceNgn,
       Deposit: app.depositAmountNgn,
       'Financed amount': app.financedAmountNgn,

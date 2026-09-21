@@ -32,10 +32,7 @@ import {
 } from './dto/cng-application.dto';
 import {
   CNG_DOCUMENTS,
-  CNG_FINANCING_PLANS,
-  CNG_PACKAGES,
   CNG_REPAYMENT_FREQUENCY,
-  CngFinancingPlan,
   REQUIRED_CNG_DOCUMENT_TYPES,
   cngInstallmentCount,
   isCngDocumentType,
@@ -45,6 +42,7 @@ import { SensitiveDataService } from './sensitive-data.service';
 import { OtpDeliveryService } from './otp-delivery.service';
 import { DocumentStorageService } from './document-storage.service';
 import { ResendEmailService } from '../auth/resend-email.service';
+import { CngFinancingConfigurationService } from './cng-financing-configuration.service';
 
 type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
   include: { documents: true };
@@ -63,17 +61,14 @@ export class CngApplicationsService {
     private readonly documentStorage: DocumentStorageService,
     private readonly email: ResendEmailService,
     private readonly config: ConfigService,
+    private readonly financingConfiguration: CngFinancingConfigurationService,
   ) {}
 
-  getConfiguration(): Record<string, unknown> {
+  async getConfiguration(): Promise<Record<string, unknown>> {
+    const packages = await this.financingConfiguration.publicPackages();
     return {
-      packages: Object.entries(CNG_PACKAGES).map(([id, value]) => ({ id, ...value })),
-      financingPlans: Object.entries(CNG_FINANCING_PLANS).map(([id, value]) => ({
-        id,
-        ...value,
-        repaymentFrequency: CNG_REPAYMENT_FREQUENCY,
-        installmentCount: cngInstallmentCount(value.tenure),
-      })),
+      packages,
+      financingPlans: packages[0]?.financingPlans ?? [],
       documents: Object.entries(CNG_DOCUMENTS).map(([type, value]) => ({
         type,
         label: value.label,
@@ -210,7 +205,7 @@ export class CngApplicationsService {
     id: string,
     dto: RequestPhoneVerificationDto,
   ): Promise<{ phone: string; expiresAt: Date; developmentCode?: string }> {
-    const application = await this.getEditableApplication(id);
+    await this.getEditableApplication(id);
     const phone = normalizeNigerianPhone(dto.phone);
     const recentChallenge = await this.prisma.cngPhoneVerification.findFirst({
       where: { applicationId: id, phone },
@@ -330,30 +325,31 @@ export class CngApplicationsService {
     dto: SaveFinancingDetailsDto,
   ): Promise<Record<string, unknown>> {
     await this.getEditableApplication(id);
-    const plan = CNG_FINANCING_PLANS[dto.financingPlanId];
-    const packageDetails = CNG_PACKAGES[dto.packageId];
-
-    const depositAmountNgn = Math.round(packageDetails.priceNgn * (plan.depositPct / 100));
-    const financedAmountNgn = packageDetails.priceNgn - depositAmountNgn;
-    const interestAmountNgn = Math.round(packageDetails.priceNgn * plan.interestRate);
-    const totalCostNgn = packageDetails.priceNgn + interestAmountNgn;
-    const installmentCount = cngInstallmentCount(plan.tenure);
-    const weeklyPaymentNgn = installmentCount
-      ? Math.round((financedAmountNgn + interestAmountNgn) / installmentCount)
-      : 0;
+    const selection = await this.financingConfiguration.findPublishedQuote(
+      dto.packageId,
+      dto.financingPlanId,
+    );
+    const { version, term, quote } = selection;
 
     const updated = await this.prisma.cngApplication.update({
       where: { id },
       data: {
         packageId: dto.packageId,
         financingPlanId: dto.financingPlanId,
-        preferredLoanTenor: plan.tenure,
-        packagePriceNgn: packageDetails.priceNgn,
-        depositAmountNgn,
-        financedAmountNgn,
-        interestAmountNgn,
-        weeklyPaymentNgn,
-        totalCostNgn,
+        financingConfigVersionId: version.id,
+        packageNameSnapshot: version.name,
+        packageTankSnapshot: version.tank,
+        financingPlanNameSnapshot: term.name,
+        depositPctSnapshot: term.depositPct,
+        interestRateBpsSnapshot: term.interestRateBps,
+        installmentCountSnapshot: quote.installmentCount,
+        preferredLoanTenor: term.tenureMonths,
+        packagePriceNgn: version.priceNgn,
+        depositAmountNgn: quote.depositAmountNgn,
+        financedAmountNgn: quote.financedAmountNgn,
+        interestAmountNgn: quote.interestAmountNgn,
+        weeklyPaymentNgn: quote.weeklyPaymentNgn,
+        totalCostNgn: quote.totalCostNgn,
         privacyConsentAt: new Date(),
         privacyPolicyVersion: dto.privacyPolicyVersion || '1.0',
         financingCompletedAt: new Date(),
@@ -668,7 +664,7 @@ export class CngApplicationsService {
     }
 
     const tenure = application.preferredLoanTenor ?? 0;
-    const installmentCount = cngInstallmentCount(tenure);
+    const installmentCount = application.installmentCountSnapshot ?? cngInstallmentCount(tenure);
     if (
       dto.status === CngApplicationStatus.FINANCE_DISBURSED &&
       installmentCount > 0 &&
@@ -823,10 +819,18 @@ export class CngApplicationsService {
     const financing = application.financingCompletedAt
       ? {
           packageId: application.packageId,
+          packageName: application.packageNameSnapshot,
+          packageTank: application.packageTankSnapshot,
           financingPlanId: application.financingPlanId,
+          financingPlanName: application.financingPlanNameSnapshot,
+          configurationVersionId: application.financingConfigVersionId,
+          depositPct: application.depositPctSnapshot,
+          interestRateBps: application.interestRateBpsSnapshot,
           repaymentTenure: application.preferredLoanTenor,
           repaymentFrequency: CNG_REPAYMENT_FREQUENCY,
-          installmentCount: cngInstallmentCount(application.preferredLoanTenor),
+          installmentCount:
+            application.installmentCountSnapshot ??
+            cngInstallmentCount(application.preferredLoanTenor),
           packagePriceNgn: application.packagePriceNgn,
           depositAmountNgn: application.depositAmountNgn,
           financedAmountNgn: application.financedAmountNgn,

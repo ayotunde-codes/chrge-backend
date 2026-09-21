@@ -45,48 +45,6 @@ export enum CngFinancingPlan {
   Bronze = 'bronze',
 }
 
-export const CNG_PACKAGE_IDS = ['A', 'B', 'C', 'D'] as const;
-
-export const CNG_PACKAGES: Record<
-  (typeof CNG_PACKAGE_IDS)[number],
-  { name: string; tank: string; priceNgn: number }
-> = {
-  A: { name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 850000 },
-  B: { name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 1100000 },
-  C: { name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 1400000 },
-  D: { name: 'Max 100', tank: '100 Litre Tank', priceNgn: 2000000 },
-};
-
-export const CNG_FINANCING_PLANS: Record<
-  CngFinancingPlan,
-  { name: string; depositPct: number; tenure: number | null; interestRate: number }
-> = {
-  [CngFinancingPlan.Full]: {
-    name: 'Full Payment',
-    depositPct: 100,
-    tenure: null,
-    interestRate: 0,
-  },
-  [CngFinancingPlan.Gold]: {
-    name: 'Gold Plan',
-    depositPct: 50,
-    tenure: 6,
-    interestRate: 0.1,
-  },
-  [CngFinancingPlan.Silver]: {
-    name: 'Silver Plan',
-    depositPct: 20,
-    tenure: 10,
-    interestRate: 0.15,
-  },
-  [CngFinancingPlan.Bronze]: {
-    name: 'Bronze Plan',
-    depositPct: 10,
-    tenure: 12,
-    interestRate: 0.2,
-  },
-};
-
 export const CNG_REPAYMENT_FREQUENCY = 'WEEKLY' as const;
 
 export function cngInstallmentCount(tenureMonths: number | null | undefined): number {

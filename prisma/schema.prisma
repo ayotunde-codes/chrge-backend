@@ -129,6 +129,12 @@ enum CngInstallmentStatus {
   OVERDUE
 }
 
+enum CngFinancingConfigurationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 enum CngAvailabilityStatus {
   AVAILABLE
   UNAVAILABLE
@@ -188,22 +194,22 @@ model User {
   deletedAt DateTime? // Soft delete
 
   // Relations
-  refreshTokens           RefreshToken[]
-  userVehicles            UserVehicle[]
-  favorites               Favorite[]
-  reviews                 Review[]
-  submittedStations       Station[]            @relation("SubmittedStations")
-  cngApplications         CngApplication[]     @relation("CngApplicant")
-  reviewedCngApplications CngApplication[]     @relation("CngReviewer")
-  reviewedStations        Station[]            @relation("ReviewedStations")
-  auditEvents             AuditEvent[]         @relation("AuditActor")
-  staffProfile            StaffProfile?
-  staffInvitationsCreated StaffInvitation[]    @relation("StaffInviter")
-  staffAuthChallenges     StaffAuthChallenge[]
-  passwordResetChallenges PasswordResetChallenge[]
-  stationAssociations         StationAssociation[]  @relation("StationAssociationUser")
-  approvedStationAssociations StationAssociation[]  @relation("StationAssociationApprover")
-  stationConditionReports     StationConditionReport[] @relation("StationConditionReporter")
+  refreshTokens               RefreshToken[]
+  userVehicles                UserVehicle[]
+  favorites                   Favorite[]
+  reviews                     Review[]
+  submittedStations           Station[]                  @relation("SubmittedStations")
+  cngApplications             CngApplication[]           @relation("CngApplicant")
+  reviewedCngApplications     CngApplication[]           @relation("CngReviewer")
+  reviewedStations            Station[]                  @relation("ReviewedStations")
+  auditEvents                 AuditEvent[]               @relation("AuditActor")
+  staffProfile                StaffProfile?
+  staffInvitationsCreated     StaffInvitation[]          @relation("StaffInviter")
+  staffAuthChallenges         StaffAuthChallenge[]
+  passwordResetChallenges     PasswordResetChallenge[]
+  stationAssociations         StationAssociation[]       @relation("StationAssociationUser")
+  approvedStationAssociations StationAssociation[]       @relation("StationAssociationApprover")
+  stationConditionReports     StationConditionReport[]   @relation("StationConditionReporter")
   stationAvailabilityEvents   StationAvailabilityEvent[] @relation("StationAvailabilityReporter")
 
   @@index([email])
@@ -522,33 +528,33 @@ model Station {
   reviewCount    Int    @default(0)
 
   // Tracking
-  lastStatusUpdate DateTime?
+  lastStatusUpdate       DateTime?
   currentCngAvailability CngAvailabilityStatus @default(UNKNOWN)
   currentQueueLength     Int?
   currentPressureBar     Decimal?              @db.Decimal(6, 2)
   cngStatusUpdatedAt     DateTime?
   cngStatusUpdatedBy     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  deletedAt              DateTime?
 
   // Relations
-  network    Network?       @relation(fields: [networkId], references: [id])
-  submitter  User?          @relation("SubmittedStations", fields: [submittedBy], references: [id])
-  reviewer   User?          @relation("ReviewedStations", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  ports      Port[]
-  favorites  Favorite[]
-  reviews    Review[]
-  images     StationImage[]
+  network            Network?                   @relation(fields: [networkId], references: [id])
+  submitter          User?                      @relation("SubmittedStations", fields: [submittedBy], references: [id])
+  reviewer           User?                      @relation("ReviewedStations", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  ports              Port[]
+  favorites          Favorite[]
+  reviews            Review[]
+  images             StationImage[]
   associations       StationAssociation[]
   conditionReports   StationConditionReport[]
   availabilityEvents StationAvailabilityEvent[]
 
+  @@unique([submittedBy, submissionKey])
   @@index([networkId])
   @@index([latitude, longitude])
   @@index([city, state])
   @@index([isActive])
-  @@unique([submittedBy, submissionKey])
   @@index([status, isActive, createdAt])
   @@index([submittedBy, createdAt])
   @@index([stationType])
@@ -590,8 +596,8 @@ model StationConditionReport {
   idempotencyKey       String
   reportedAt           DateTime               @default(now())
 
-  station      Station               @relation(fields: [stationId], references: [id], onDelete: Restrict)
-  reporter     User                  @relation("StationConditionReporter", fields: [reportedBy], references: [id], onDelete: Restrict)
+  station       Station                @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  reporter      User                   @relation("StationConditionReporter", fields: [reportedBy], references: [id], onDelete: Restrict)
   notifications CngNotificationEvent[]
 
   @@unique([reportedBy, idempotencyKey])
@@ -600,14 +606,14 @@ model StationConditionReport {
 }
 
 model StationAvailabilityEvent {
-  id         String                 @id @default(uuid())
-  stationId  String
-  status     CngAvailabilityStatus
-  startedAt  DateTime               @default(now())
-  endedAt    DateTime?
-  updatedBy  String
-  source     StationConditionSource @default(STATION_PORTAL)
-  createdAt  DateTime               @default(now())
+  id        String                 @id @default(uuid())
+  stationId String
+  status    CngAvailabilityStatus
+  startedAt DateTime               @default(now())
+  endedAt   DateTime?
+  updatedBy String
+  source    StationConditionSource @default(STATION_PORTAL)
+  createdAt DateTime               @default(now())
 
   station  Station @relation(fields: [stationId], references: [id], onDelete: Restrict)
   reporter User    @relation("StationAvailabilityReporter", fields: [updatedBy], references: [id], onDelete: Restrict)
@@ -789,52 +795,117 @@ model CngApplication {
   vehicleCompletedAt DateTime?
 
   // Financing selection and immutable quote snapshot
-  packageId            String?
-  financingPlanId      String?
-  preferredLoanTenor   Int?
-  packagePriceNgn      Int?
-  depositAmountNgn     Int?
-  financedAmountNgn    Int?
-  interestAmountNgn    Int?
-  weeklyPaymentNgn     Int? @map("monthlyPaymentNgn")
-  totalCostNgn         Int?
-  privacyConsentAt     DateTime?
-  privacyPolicyVersion String?
-  financingCompletedAt DateTime?
+  packageId                 String?
+  financingConfigVersionId  String?
+  packageNameSnapshot       String?
+  packageTankSnapshot       String?
+  financingPlanId           String?
+  financingPlanNameSnapshot String?
+  depositPctSnapshot        Int?
+  interestRateBpsSnapshot   Int?
+  installmentCountSnapshot  Int?
+  preferredLoanTenor        Int?
+  packagePriceNgn           Int?
+  depositAmountNgn          Int?
+  financedAmountNgn         Int?
+  interestAmountNgn         Int?
+  weeklyPaymentNgn          Int?      @map("monthlyPaymentNgn")
+  totalCostNgn              Int?
+  privacyConsentAt          DateTime?
+  privacyPolicyVersion      String?
+  financingCompletedAt      DateTime?
 
   // Workflow metadata
-  submittedAt     DateTime?
-  reviewedAt      DateTime?
-  reviewedBy      String?
-  reviewNote      String?
-  rejectionReason String?
+  submittedAt             DateTime?
+  reviewedAt              DateTime?
+  reviewedBy              String?
+  reviewNote              String?
+  rejectionReason         String?
   inspectionAppointmentAt DateTime?
-  financingApprovedAt DateTime?
+  financingApprovedAt     DateTime?
   conversionAppointmentAt DateTime?
-  financeDisbursedAt DateTime?
-  conversionCompletedAt DateTime?
-  fullyPaidAt DateTime?
-  cancelledAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  financeDisbursedAt      DateTime?
+  conversionCompletedAt   DateTime?
+  fullyPaidAt             DateTime?
+  cancelledAt             DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  applicant          User                     @relation("CngApplicant", fields: [userId], references: [id], onDelete: Cascade)
-  reviewer           User?                    @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  documents          CngApplicationDocument[]
-  documentVersions   CngApplicationDocumentVersion[]
+  applicant                     User                              @relation("CngApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer                      User?                             @relation("CngReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  financingConfigVersion        CngFinancingPackageVersion?       @relation(fields: [financingConfigVersionId], references: [id], onDelete: Restrict)
+  documents                     CngApplicationDocument[]
+  documentVersions              CngApplicationDocumentVersion[]
   additionalInformationRequests CngAdditionalInformationRequest[]
-  revisions          CngApplicationRevision[]
-  exports            CngApplicationExport[]
-  phoneVerifications CngPhoneVerification[]
-  reviewNotes        CngApplicationReviewNote[]
-  installments       CngInstallment[]
+  revisions                     CngApplicationRevision[]
+  exports                       CngApplicationExport[]
+  phoneVerifications            CngPhoneVerification[]
+  reviewNotes                   CngApplicationReviewNote[]
+  installments                  CngInstallment[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([phone])
   @@index([bvnHash])
   @@index([ninHash])
+  @@index([financingConfigVersionId])
   @@map("cng_applications")
+}
+
+model CngFinancingPackage {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  isActive  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions CngFinancingPackageVersion[]
+
+  @@index([isActive, sortOrder])
+  @@map("cng_financing_packages")
+}
+
+model CngFinancingPackageVersion {
+  id          String                          @id @default(uuid())
+  packageId   String
+  version     Int
+  status      CngFinancingConfigurationStatus @default(DRAFT)
+  name        String
+  tank        String
+  priceNgn    Int
+  createdBy   String?
+  publishedBy String?
+  publishedAt DateTime?
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+
+  package      CngFinancingPackage       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  terms        CngFinancingPackageTerm[]
+  applications CngApplication[]
+
+  @@unique([packageId, version])
+  @@index([packageId, status, version])
+  @@map("cng_financing_package_versions")
+}
+
+model CngFinancingPackageTerm {
+  id              String   @id @default(uuid())
+  versionId       String
+  planId          String
+  name            String
+  depositPct      Int
+  tenureMonths    Int?
+  interestRateBps Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  version CngFinancingPackageVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, planId])
+  @@index([versionId])
+  @@map("cng_financing_package_terms")
 }
 
 model CngApplicationReviewNote {
@@ -927,7 +998,7 @@ model CngAdditionalInformationRequest {
   reopenedAt     DateTime?
   cancelledAt    DateTime?
 
-  application CngApplication                      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application CngApplication                     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   responses   CngAdditionalInformationResponse[]
 
   @@index([applicationId, requestedAt])
@@ -941,7 +1012,7 @@ model CngAdditionalInformationResponse {
   textAnswer  String?
   submittedAt DateTime @default(now())
 
-  request   CngAdditionalInformationRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  request   CngAdditionalInformationRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
   documents CngAdditionalInformationDocument[]
 
   @@index([requestId, submittedAt])

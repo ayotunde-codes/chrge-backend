@@ -207,7 +207,7 @@ export class StaffAuthService {
       { actorId: userId, requestId: meta.requestId, ipAddress: meta.ip, userAgent: meta.userAgent },
       {
         action: 'staff.step_up_succeeded',
-        targetType: 'cng_application',
+        targetType: dto.action.includes('FINANCING') ? 'cng_financing_package' : 'cng_application',
         targetId: dto.resourceId,
         reason: dto.reason,
         sensitivity: 'RESTRICTED' as never,
