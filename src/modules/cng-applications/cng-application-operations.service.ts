@@ -25,6 +25,7 @@ import {
 } from './dto/cng-application.dto';
 import { DocumentStorageService } from './document-storage.service';
 import { SensitiveDataService } from './sensitive-data.service';
+import { CNG_REPAYMENT_FREQUENCY, cngInstallmentCount } from './cng-application.constants';
 
 type StepUpAction = 'EDIT_APPLICATION' | 'REPLACE_DOCUMENT' | 'EXPORT_APPLICATION';
 
@@ -71,7 +72,7 @@ const EDITABLE_FIELDS = new Set([
   'depositAmountNgn',
   'financedAmountNgn',
   'interestAmountNgn',
-  'monthlyPaymentNgn',
+  'weeklyPaymentNgn',
   'totalCostNgn',
 ]);
 
@@ -88,7 +89,7 @@ const NUMBER_FIELDS = new Set([
   'depositAmountNgn',
   'financedAmountNgn',
   'interestAmountNgn',
-  'monthlyPaymentNgn',
+  'weeklyPaymentNgn',
   'totalCostNgn',
 ]);
 const ALLOWED_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
@@ -784,12 +785,14 @@ export class CngApplicationOperationsService {
     for (const [label, value] of Object.entries({
       Package: app.packageId,
       Plan: app.financingPlanId,
-      'Loan tenor': app.preferredLoanTenor,
+      'Loan tenor (months)': app.preferredLoanTenor,
+      'Repayment frequency': app.preferredLoanTenor ? CNG_REPAYMENT_FREQUENCY : null,
+      'Number of installments': cngInstallmentCount(app.preferredLoanTenor),
       'Package price': app.packagePriceNgn,
       Deposit: app.depositAmountNgn,
       'Financed amount': app.financedAmountNgn,
       Interest: app.interestAmountNgn,
-      'Monthly payment': app.monthlyPaymentNgn,
+      'Weekly payment': app.weeklyPaymentNgn,
       'Total cost': app.totalCostNgn,
       'Consent at': app.privacyConsentAt,
       'Policy version': app.privacyPolicyVersion,

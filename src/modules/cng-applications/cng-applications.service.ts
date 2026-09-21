@@ -34,8 +34,10 @@ import {
   CNG_DOCUMENTS,
   CNG_FINANCING_PLANS,
   CNG_PACKAGES,
+  CNG_REPAYMENT_FREQUENCY,
   CngFinancingPlan,
   REQUIRED_CNG_DOCUMENT_TYPES,
+  cngInstallmentCount,
   isCngDocumentType,
   normalizeNigerianPhone,
 } from './cng-application.constants';
@@ -69,6 +71,8 @@ export class CngApplicationsService {
       financingPlans: Object.entries(CNG_FINANCING_PLANS).map(([id, value]) => ({
         id,
         ...value,
+        repaymentFrequency: CNG_REPAYMENT_FREQUENCY,
+        installmentCount: cngInstallmentCount(value.tenure),
       })),
       documents: Object.entries(CNG_DOCUMENTS).map(([type, value]) => ({
         type,
@@ -333,8 +337,9 @@ export class CngApplicationsService {
     const financedAmountNgn = packageDetails.priceNgn - depositAmountNgn;
     const interestAmountNgn = Math.round(packageDetails.priceNgn * plan.interestRate);
     const totalCostNgn = packageDetails.priceNgn + interestAmountNgn;
-    const monthlyPaymentNgn = plan.tenure
-      ? Math.round((financedAmountNgn + interestAmountNgn) / plan.tenure)
+    const installmentCount = cngInstallmentCount(plan.tenure);
+    const weeklyPaymentNgn = installmentCount
+      ? Math.round((financedAmountNgn + interestAmountNgn) / installmentCount)
       : 0;
 
     const updated = await this.prisma.cngApplication.update({
@@ -347,7 +352,7 @@ export class CngApplicationsService {
         depositAmountNgn,
         financedAmountNgn,
         interestAmountNgn,
-        monthlyPaymentNgn,
+        weeklyPaymentNgn,
         totalCostNgn,
         privacyConsentAt: new Date(),
         privacyPolicyVersion: dto.privacyPolicyVersion || '1.0',
@@ -663,19 +668,23 @@ export class CngApplicationsService {
     }
 
     const tenure = application.preferredLoanTenor ?? 0;
+    const installmentCount = cngInstallmentCount(tenure);
     if (
       dto.status === CngApplicationStatus.FINANCE_DISBURSED &&
-      tenure > 0 &&
-      application.monthlyPaymentNgn
+      installmentCount > 0 &&
+      application.weeklyPaymentNgn
     ) {
+      const totalRepaymentNgn =
+        (application.financedAmountNgn ?? 0) + (application.interestAmountNgn ?? 0);
       await this.prisma.cngInstallment.createMany({
-        data: Array.from({ length: tenure }, (_, index) => ({
+        data: Array.from({ length: installmentCount }, (_, index) => ({
           applicationId: id,
           number: index + 1,
-          amountNgn: application.monthlyPaymentNgn!,
-          dueAt: new Date(
-            Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + index + 1, now.getUTCDate()),
-          ),
+          amountNgn:
+            index === installmentCount - 1
+              ? totalRepaymentNgn - application.weeklyPaymentNgn! * (installmentCount - 1)
+              : application.weeklyPaymentNgn!,
+          dueAt: new Date(now.getTime() + (index + 1) * 7 * 24 * 60 * 60 * 1000),
         })),
         skipDuplicates: true,
       });
@@ -816,11 +825,13 @@ export class CngApplicationsService {
           packageId: application.packageId,
           financingPlanId: application.financingPlanId,
           repaymentTenure: application.preferredLoanTenor,
+          repaymentFrequency: CNG_REPAYMENT_FREQUENCY,
+          installmentCount: cngInstallmentCount(application.preferredLoanTenor),
           packagePriceNgn: application.packagePriceNgn,
           depositAmountNgn: application.depositAmountNgn,
           financedAmountNgn: application.financedAmountNgn,
           interestAmountNgn: application.interestAmountNgn,
-          monthlyPaymentNgn: application.monthlyPaymentNgn,
+          weeklyPaymentNgn: application.weeklyPaymentNgn,
           totalCostNgn: application.totalCostNgn,
           privacyConsentAt: application.privacyConsentAt,
           privacyPolicyVersion: application.privacyPolicyVersion,

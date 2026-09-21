@@ -796,7 +796,7 @@ model CngApplication {
   depositAmountNgn     Int?
   financedAmountNgn    Int?
   interestAmountNgn    Int?
-  monthlyPaymentNgn    Int?
+  weeklyPaymentNgn     Int? @map("monthlyPaymentNgn")
   totalCostNgn         Int?
   privacyConsentAt     DateTime?
   privacyPolicyVersion String?

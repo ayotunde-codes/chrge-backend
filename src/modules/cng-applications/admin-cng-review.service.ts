@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { DocumentStorageService } from './document-storage.service';
 import { SensitiveDataService } from './sensitive-data.service';
+import { CNG_REPAYMENT_FREQUENCY, cngInstallmentCount } from './cng-application.constants';
 
 @Injectable()
 export class AdminCngReviewService {
@@ -96,11 +97,13 @@ export class AdminCngReviewService {
         financingPlanId: app.financingPlanId,
         preferredLoanTenor: app.preferredLoanTenor,
         repaymentTenure: app.preferredLoanTenor,
+        repaymentFrequency: CNG_REPAYMENT_FREQUENCY,
+        installmentCount: cngInstallmentCount(app.preferredLoanTenor),
         packagePriceNgn: app.packagePriceNgn,
         depositAmountNgn: app.depositAmountNgn,
         financedAmountNgn: app.financedAmountNgn,
         interestAmountNgn: app.interestAmountNgn,
-        monthlyPaymentNgn: app.monthlyPaymentNgn,
+        weeklyPaymentNgn: app.weeklyPaymentNgn,
         totalCostNgn: app.totalCostNgn,
         monthlyIncome: app.monthlyIncome,
       },

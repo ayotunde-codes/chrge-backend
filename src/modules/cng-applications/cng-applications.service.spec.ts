@@ -229,7 +229,7 @@ describe('CngApplicationsService', () => {
       depositAmountNgn: 550000,
       financedAmountNgn: 550000,
       interestAmountNgn: 110000,
-      monthlyPaymentNgn: 110000,
+      weeklyPaymentNgn: 25385,
       totalCostNgn: 1210000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
@@ -250,7 +250,7 @@ describe('CngApplicationsService', () => {
           depositAmountNgn: 550000,
           financedAmountNgn: 550000,
           interestAmountNgn: 110000,
-          monthlyPaymentNgn: 110000,
+          weeklyPaymentNgn: 25385,
           totalCostNgn: 1210000,
         }),
       }),
@@ -268,7 +268,7 @@ describe('CngApplicationsService', () => {
       depositAmountNgn: 200000,
       financedAmountNgn: 1800000,
       interestAmountNgn: 400000,
-      monthlyPaymentNgn: 183333,
+      weeklyPaymentNgn: 42308,
       totalCostNgn: 2400000,
       privacyConsentAt: new Date(),
       privacyPolicyVersion: '1.0',
@@ -290,7 +290,7 @@ describe('CngApplicationsService', () => {
           depositAmountNgn: 200000,
           financedAmountNgn: 1800000,
           interestAmountNgn: 400000,
-          monthlyPaymentNgn: 183333,
+          weeklyPaymentNgn: 42308,
           totalCostNgn: 2400000,
         }),
       }),
@@ -490,6 +490,34 @@ describe('CngApplicationsService', () => {
       }),
     ).rejects.toThrow(ConflictException);
   });
+
+  it('creates a weekly repayment schedule when finance is disbursed', async () => {
+    const financed = {
+      ...application,
+      status: CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+      preferredLoanTenor: 6,
+      financedAmountNgn: 550000,
+      interestAmountNgn: 110000,
+      weeklyPaymentNgn: 25385,
+    };
+    mockPrisma.cngApplication.findUnique.mockResolvedValue(financed);
+    mockPrisma.cngApplication.update.mockResolvedValue({
+      ...financed,
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    await service.advanceWorkflow(application.id, {
+      status: CngApplicationStatus.FINANCE_DISBURSED,
+    });
+
+    const schedule = mockPrisma.cngInstallment.createMany.mock.calls[0][0].data;
+    expect(schedule).toHaveLength(26);
+    expect(schedule[0].amountNgn).toBe(25385);
+    expect(schedule[25].amountNgn).toBe(25375);
+    expect(schedule[1].dueAt.getTime() - schedule[0].dueAt.getTime()).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+  });
 });
 
 function makeApplication(): ApplicationWithDocuments {
@@ -548,7 +576,7 @@ function makeApplication(): ApplicationWithDocuments {
     depositAmountNgn: null,
     financedAmountNgn: null,
     interestAmountNgn: null,
-    monthlyPaymentNgn: null,
+    weeklyPaymentNgn: null,
     totalCostNgn: null,
     privacyConsentAt: null,
     privacyPolicyVersion: null,

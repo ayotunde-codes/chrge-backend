@@ -87,6 +87,13 @@ export const CNG_FINANCING_PLANS: Record<
   },
 };
 
+export const CNG_REPAYMENT_FREQUENCY = 'WEEKLY' as const;
+
+export function cngInstallmentCount(tenureMonths: number | null | undefined): number {
+  if (!tenureMonths) return 0;
+  return Math.round((tenureMonths * 52) / 12);
+}
+
 export const CNG_INCOME_RANGES = [
   'Below ₦50,000',
   '₦50,000 – ₦100,000',

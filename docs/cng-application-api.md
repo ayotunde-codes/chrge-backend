@@ -133,7 +133,7 @@ BVN and NIN are encrypted before persistence. Read responses expose only masked 
 }
 ```
 
-The server calculates and stores the price, deposit, financed amount, interest, monthly payment, and total-cost snapshot.
+The server calculates and stores the price, deposit, financed amount, interest, weekly payment, installment count, and total-cost snapshot.
 
 ## Required document types
 
