@@ -45,47 +45,12 @@ export enum CngFinancingPlan {
   Bronze = 'bronze',
 }
 
-export const CNG_PACKAGE_IDS = ['A', 'B', 'C', 'D'] as const;
+export const CNG_REPAYMENT_FREQUENCY = 'WEEKLY' as const;
 
-export const CNG_PACKAGES: Record<
-  (typeof CNG_PACKAGE_IDS)[number],
-  { name: string; tank: string; priceNgn: number }
-> = {
-  A: { name: 'Compact 65', tank: '65 Litre Tank', priceNgn: 85000 },
-  B: { name: 'Plus 75', tank: '75 Litre Tank', priceNgn: 110000 },
-  C: { name: 'Extended 90', tank: '90 Litre Tank', priceNgn: 140000 },
-  D: { name: 'Max 100', tank: '100 Litre Tank', priceNgn: 200000 },
-};
-
-export const CNG_FINANCING_PLANS: Record<
-  CngFinancingPlan,
-  { name: string; depositPct: number; tenure: number | null; interestRate: number }
-> = {
-  [CngFinancingPlan.Full]: {
-    name: 'Full Payment',
-    depositPct: 100,
-    tenure: null,
-    interestRate: 0,
-  },
-  [CngFinancingPlan.Gold]: {
-    name: 'Gold Plan',
-    depositPct: 50,
-    tenure: 6,
-    interestRate: 0.1,
-  },
-  [CngFinancingPlan.Silver]: {
-    name: 'Silver Plan',
-    depositPct: 20,
-    tenure: 10,
-    interestRate: 0.15,
-  },
-  [CngFinancingPlan.Bronze]: {
-    name: 'Bronze Plan',
-    depositPct: 10,
-    tenure: 12,
-    interestRate: 0.2,
-  },
-};
+export function cngInstallmentCount(tenureMonths: number | null | undefined): number {
+  if (!tenureMonths) return 0;
+  return Math.round((tenureMonths * 52) / 12);
+}
 
 export const CNG_INCOME_RANGES = [
   'Below ₦50,000',
@@ -136,7 +101,7 @@ export const NIGERIAN_STATES = [
   'Zamfara',
 ] as const;
 
-export const NIGERIAN_PHONE_REGEX = /^(?:\+234|0)(?:70|80|81|90|91)\d{8}$/;
+export const NIGERIAN_PHONE_REGEX = /^(?:\+[1-9]\d{7,14}|0(?:70|80|81|90|91)\d{8})$/;
 
 export type CngDocumentConfig = {
   label: string;
@@ -175,7 +140,7 @@ export const CNG_DOCUMENTS = {
   },
   proof_income: {
     label: 'Proof of Income',
-    required: true,
+    required: false,
     maxSizeBytes: 5 * 1024 * 1024,
     allowedMimeTypes: DOCUMENT_MIME_TYPES,
   },
@@ -231,6 +196,18 @@ export const CNG_DOCUMENTS = {
     label: 'Confirmation Letter',
     required: false,
     maxSizeBytes: 2 * 1024 * 1024,
+    allowedMimeTypes: DOCUMENT_MIME_TYPES,
+  },
+  guarantor_form: {
+    label: 'Completed Guarantor Form',
+    required: false,
+    maxSizeBytes: 5 * 1024 * 1024,
+    allowedMimeTypes: DOCUMENT_MIME_TYPES,
+  },
+  guarantor_id: {
+    label: 'Guarantor Government-issued ID',
+    required: false,
+    maxSizeBytes: 5 * 1024 * 1024,
     allowedMimeTypes: DOCUMENT_MIME_TYPES,
   },
 } satisfies Record<string, CngDocumentConfig>;

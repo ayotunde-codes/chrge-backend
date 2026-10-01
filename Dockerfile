@@ -13,6 +13,8 @@ RUN npm run build
 # Production stage
 FROM node:22-alpine AS runner
 
+RUN apk add --no-cache qpdf
+
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -25,5 +27,6 @@ COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
 
-# Run migrations, safely upsert the public vehicle catalog, then start the app.
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run prisma:seed:catalog:prod && node dist/src/main.js"]
+# Database migrations run once in Railway's pre-deploy phase. Keeping them out
+# of the container command prevents every restart or replica from racing them.
+CMD ["node", "dist/src/main.js"]

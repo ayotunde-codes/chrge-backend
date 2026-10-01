@@ -28,6 +28,8 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { UserResponseDto } from '../users/dto/user-response.dto';
+import { ConfirmPasswordResetDto, RequestPasswordResetDto, VerifyPasswordResetDto } from './dto/password-reset.dto';
+import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -37,6 +39,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   private get refreshCookieOptions(): CookieOptions {
@@ -105,6 +108,33 @@ export class AuthController {
     const userAgent = req.get('user-agent');
     const result = await this.authService.login(loginDto, { userAgent, ip });
     return this.sendAuthResult(result, response);
+  }
+
+  @Post('password-reset/request')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ auth: { limit: 3, ttl: 60000 } })
+  @ApiOperation({ summary: 'Request a one-time password reset code by email' })
+  requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    return this.passwordReset.request(dto);
+  }
+
+  @Post('password-reset/verify')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ auth: { limit: 8, ttl: 60000 } })
+  @ApiOperation({ summary: 'Verify an emailed password reset code before password entry' })
+  verifyPasswordReset(@Body() dto: VerifyPasswordResetDto) {
+    return this.passwordReset.verify(dto);
+  }
+
+  @Post('password-reset/confirm')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ auth: { limit: 8, ttl: 60000 } })
+  @ApiOperation({ summary: 'Reset a password using the emailed one-time code' })
+  confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
+    return this.passwordReset.confirm(dto);
   }
 
   @Post('google')

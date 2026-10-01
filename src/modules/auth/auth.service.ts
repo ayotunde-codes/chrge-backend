@@ -68,7 +68,7 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`New user registered: ${user.id}`);
+    this.logger.log('New user registered');
 
     // Generate tokens
     const tokens = await this.tokenService.generateTokens(user, meta);
@@ -105,7 +105,7 @@ export class AuthService {
       throw new UnauthorizedException('Account has been deactivated');
     }
 
-    this.logger.log(`User logged in: ${user.id}`);
+    this.logger.log('User logged in');
 
     // Generate tokens
     const tokens = await this.tokenService.generateTokens(user, meta);
@@ -157,7 +157,7 @@ export class AuthService {
             avatarUrl: googleUser.picture ?? user.avatarUrl,
           },
         });
-        this.logger.log(`Linked Google account to existing user: ${user.id}`);
+        this.logger.log('Linked Google account to existing user');
       } else {
         // Existing Google user: keep profile in sync with Google (name, avatar)
         user = await this.prisma.user.update({
@@ -183,7 +183,7 @@ export class AuthService {
         },
       });
       isNewUser = true;
-      this.logger.log(`New user created via Google: ${user.id}`);
+      this.logger.log('New user created via Google');
     }
 
     // Generate tokens
@@ -224,11 +224,11 @@ export class AuthService {
     if (dto.revokeAll) {
       // Revoke all refresh tokens for user
       await this.tokenService.revokeAllUserTokens(userId);
-      this.logger.log(`All tokens revoked for user: ${userId}`);
+      this.logger.log('All user tokens revoked');
     } else if (dto.refreshToken) {
       // Revoke specific refresh token
       await this.tokenService.revokeRefreshToken(dto.refreshToken);
-      this.logger.log(`Token revoked for user: ${userId}`);
+      this.logger.log('User token revoked');
     }
   }
 

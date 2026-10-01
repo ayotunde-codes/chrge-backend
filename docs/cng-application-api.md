@@ -20,7 +20,7 @@ The configured storage directory must be backed by a persistent volume in deploy
 4. Save Personal Details with `PATCH /cng/applications/:id/personal`.
 5. Save Vehicle Details with `PATCH /cng/applications/:id/vehicle`.
 6. Upload each document independently.
-7. Save package, financing, loan tenor, and consent.
+7. Save package, deposit-based financing plan, and consent.
 8. Read the application to confirm `progress` has no missing requirements.
 9. Submit with `POST /cng/applications/:id/submit`.
 
@@ -38,7 +38,7 @@ Every step save returns the current application and progress state, so the clien
 | POST   | `/cng/applications/:id/phone-verification/request` | Send a six-digit verification code                          |
 | POST   | `/cng/applications/:id/phone-verification/verify`  | Verify the phone number                                     |
 | PATCH  | `/cng/applications/:id/vehicle`                    | Save vehicle and conversion compatibility fields            |
-| PATCH  | `/cng/applications/:id/financing`                  | Save package, plan, tenor, and privacy consent              |
+| PATCH  | `/cng/applications/:id/financing`                  | Save package, deposit-based plan, and privacy consent        |
 | POST   | `/cng/applications/:id/documents/:type`            | Upload or replace one document using multipart field `file` |
 | DELETE | `/cng/applications/:id/documents/:type`            | Remove one document from a draft                            |
 | GET    | `/cng/applications/:id/documents/:type/download`   | Download one private document                               |
@@ -128,13 +128,12 @@ BVN and NIN are encrypted before persistence. Read responses expose only masked 
 {
   "packageId": "B",
   "financingPlanId": "gold",
-  "preferredLoanTenor": 6,
   "privacyConsent": true,
   "privacyPolicyVersion": "1.0"
 }
 ```
 
-The server calculates and stores the price, deposit, financed amount, interest, monthly payment, and total-cost snapshot.
+The server calculates and stores the price, deposit, financed amount, interest, weekly payment, installment count, and total-cost snapshot.
 
 ## Required document types
 

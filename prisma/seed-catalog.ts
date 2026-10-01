@@ -1,5 +1,6 @@
 import { ConnectorType, PowertrainType, PrismaClient } from '@prisma/client';
 import { VEHICLE_BRANDS, VEHICLE_MODELS } from './seed-data/vehicles';
+import { seedResearchedStations } from './seed-data/stations';
 
 const prisma = new PrismaClient();
 
@@ -65,6 +66,8 @@ async function main() {
       },
     });
   }
+
+  await seedResearchedStations(prisma);
 
   console.log(`Catalog ready: ${VEHICLE_BRANDS.length} brands and ${VEHICLE_MODELS.length} models`);
 }

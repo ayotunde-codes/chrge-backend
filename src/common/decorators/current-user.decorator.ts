@@ -5,6 +5,11 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
+  audience?: 'chrge-consumer' | 'chrge-admin';
+  mfa?: boolean;
+  mfaAt?: number;
+  staffSessionId?: string;
+  environment?: string;
   iat?: number;
   exp?: number;
 }
@@ -19,4 +24,3 @@ export const CurrentUser = createParamDecorator(
     return user;
   },
 );
-

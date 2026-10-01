@@ -95,6 +95,9 @@ describe('TokenService', () => {
         sub: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
+        audience: 'chrge-consumer',
+        mfa: false,
+        environment: 'development',
       });
       expect(hashUtil.generateSecureToken).toHaveBeenCalled();
       expect(hashUtil.hashRefreshToken).toHaveBeenCalledWith(
@@ -215,6 +218,29 @@ describe('TokenService', () => {
       expect(hashUtil.hashRefreshToken).toHaveBeenCalledWith('token-to-revoke', 'pepper-secret');
       expect(mockPrismaService.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { tokenHash: 'hashed-token', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+  });
+
+  describe('revokeAdminRefreshToken', () => {
+    it('should revoke only the matching staff refresh session', async () => {
+      mockPrismaService.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.revokeAdminRefreshToken('staff-123', 'staff-refresh-token');
+
+      expect(hashUtil.hashRefreshToken).toHaveBeenCalledWith(
+        'staff-refresh-token',
+        'pepper-secret',
+      );
+      expect(mockPrismaService.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          tokenHash: 'hashed-token',
+          userId: 'staff-123',
+          audience: 'chrge-admin',
+          environment: 'development',
+          revokedAt: null,
+        },
         data: { revokedAt: expect.any(Date) },
       });
     });

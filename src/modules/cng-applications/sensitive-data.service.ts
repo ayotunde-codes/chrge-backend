@@ -13,6 +13,8 @@ import {
 export class SensitiveDataService {
   private readonly encryptionKey: Buffer;
   private readonly hmacKey: Buffer;
+  private readonly previousEncryptionKey?: Buffer;
+  private readonly previousHmacKey?: Buffer;
 
   constructor(private readonly configService: ConfigService) {
     const configuredKey = this.configService.get<string>('CNG_APPLICATION_ENCRYPTION_KEY');
@@ -23,6 +25,13 @@ export class SensitiveDataService {
 
     this.encryptionKey = createHash('sha256').update(`cng-encryption:${keyMaterial}`).digest();
     this.hmacKey = createHash('sha256').update(`cng-hmac:${keyMaterial}`).digest();
+    const previousMaterial = this.configService.get<string>('CNG_APPLICATION_PREVIOUS_ENCRYPTION_KEY');
+    if (previousMaterial && previousMaterial !== keyMaterial) {
+      this.previousEncryptionKey = createHash('sha256')
+        .update(`cng-encryption:${previousMaterial}`)
+        .digest();
+      this.previousHmacKey = createHash('sha256').update(`cng-hmac:${previousMaterial}`).digest();
+    }
   }
 
   encrypt(value: string): string {
@@ -35,6 +44,15 @@ export class SensitiveDataService {
   }
 
   decrypt(payload: string): string {
+    try {
+      return this.decryptWithKey(payload, this.encryptionKey);
+    } catch (error) {
+      if (!this.previousEncryptionKey) throw error;
+      return this.decryptWithKey(payload, this.previousEncryptionKey);
+    }
+  }
+
+  private decryptWithKey(payload: string, key: Buffer): string {
     const [ivPart, authTagPart, ciphertextPart] = payload.split('.');
     if (!ivPart || !authTagPart || !ciphertextPart) {
       throw new Error('Invalid encrypted value');
@@ -42,7 +60,7 @@ export class SensitiveDataService {
 
     const decipher = createDecipheriv(
       'aes-256-gcm',
-      this.encryptionKey,
+      key,
       Buffer.from(ivPart, 'base64url'),
     );
     decipher.setAuthTag(Buffer.from(authTagPart, 'base64url'));
@@ -61,6 +79,14 @@ export class SensitiveDataService {
   matchesHash(value: string, expectedHash: string): boolean {
     const actual = Buffer.from(this.hash(value), 'hex');
     const expected = Buffer.from(expectedHash, 'hex');
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    const currentMatches = actual.length === expected.length && timingSafeEqual(actual, expected);
+    const previous = this.previousHmacKey
+      ? Buffer.from(createHmac('sha256', this.previousHmacKey).update(value).digest('hex'), 'hex')
+      : undefined;
+    const previousMatches =
+      previous !== undefined &&
+      previous.length === expected.length &&
+      timingSafeEqual(previous, expected);
+    return currentMatches || previousMatches;
   }
 }

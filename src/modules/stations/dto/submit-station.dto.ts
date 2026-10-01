@@ -182,13 +182,20 @@ export class SubmitStationDto {
 }
 
 export class ReviewStationDto {
-  @ApiProperty({ example: 'APPROVE', enum: ['APPROVE', 'REJECT'] })
-  @IsEnum(['APPROVE', 'REJECT'])
-  action: 'APPROVE' | 'REJECT';
+  @ApiProperty({ example: 'APPROVE', enum: ['APPROVE', 'REJECT', 'REQUEST_CHANGES'] })
+  @IsEnum(['APPROVE', 'REJECT', 'REQUEST_CHANGES'])
+  action: 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES';
 
   @ApiPropertyOptional({ example: 'Location could not be verified' })
   @IsOptional()
   @IsString()
   @MaxLength(1000)
   rejectionReason?: string;
+
+  @ApiProperty({ example: 'Address and source evidence verified' })
+  @IsString()
+  @MaxLength(1000)
+  reason: string;
 }
+
+export class AmendStationSubmissionDto extends SubmitStationDto {}
