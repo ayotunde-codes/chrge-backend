@@ -96,7 +96,7 @@ export class TokenService {
       mfaAt: Math.floor(Date.now() / 1000),
       environment: this.configService.get<string>('NODE_ENV', 'development'),
     };
-    const expiresIn = Math.min(this.accessTokenExpirationMinutes, 15) * 60;
+    const expiresIn = 20 * 60;
     const accessToken = this.jwtService.sign(payload, { expiresIn });
     const refreshToken = generateSecureToken();
     const tokenHash = hashRefreshToken(refreshToken, this.refreshTokenPepper);

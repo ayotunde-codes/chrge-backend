@@ -46,6 +46,9 @@ describe('CngApplicationsService', () => {
     cngApplicationReviewNote: {
       create: jest.fn(),
     },
+    cngApplicationWorkflowEvent: { create: jest.fn() },
+    cngAdditionalInformationRequest: { create: jest.fn() },
+    cngPaymentIntent: { create: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     cngInstallment: {
       createMany: jest.fn(),
       findUnique: jest.fn(),
@@ -68,6 +71,7 @@ describe('CngApplicationsService', () => {
   };
   const mockEmail = {
     sendCngApplicationUpdated: jest.fn().mockResolvedValue({ messageId: 'email-1' }),
+    sendCngWorkflowUpdate: jest.fn().mockResolvedValue({ messageId: 'workflow-email-1' }),
   };
   const mockConfig = { get: jest.fn((_key: string, fallback?: string) => fallback) };
   const publicPackages = [
@@ -86,6 +90,7 @@ describe('CngApplicationsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
     service = new CngApplicationsService(
       mockPrisma as unknown as PrismaService,
       mockSensitive as unknown as SensitiveDataService,
@@ -336,7 +341,6 @@ describe('CngApplicationsService', () => {
         message: 'Application is incomplete',
         errors: expect.arrayContaining([
           'personal_details',
-          'phone_verification',
           'vehicle_details',
           'financing_and_consent',
           'document:govt_id',
@@ -537,7 +541,7 @@ describe('CngApplicationsService', () => {
       status: CngApplicationStatus.FINANCE_DISBURSED,
     });
 
-    await service.advanceWorkflow(application.id, {
+    await service.advanceWorkflow(application.id, 'admin-123', {
       status: CngApplicationStatus.FINANCE_DISBURSED,
     });
 
@@ -623,8 +627,11 @@ function makeApplication(): ApplicationWithDocuments {
     reviewNote: null,
     rejectionReason: null,
     inspectionAppointmentAt: null,
+    inspectionCenter: null,
     financingApprovedAt: null,
+    depositPaidAt: null,
     conversionAppointmentAt: null,
+    conversionCenter: null,
     financeDisbursedAt: null,
     conversionCompletedAt: null,
     fullyPaidAt: null,

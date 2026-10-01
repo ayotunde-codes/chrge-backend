@@ -278,6 +278,96 @@ export class ResendEmailService {
     });
   }
 
+  async sendCngWorkflowUpdate(message: {
+    to: string;
+    notificationId: string;
+    reference: string;
+    status: string;
+    dashboardUrl: string;
+    scheduledAt?: Date | null;
+    center?: string | null;
+    depositAmountNgn?: number | null;
+  }): Promise<{ messageId: string }> {
+    const appointment = message.scheduledAt
+      ? new Intl.DateTimeFormat('en-NG', {
+          dateStyle: 'full',
+          timeStyle: 'short',
+          timeZone: 'Africa/Lagos',
+        }).format(message.scheduledAt)
+      : null;
+    const templates: Record<string, { subject: string; title: string; intro: string }> = {
+      UNDER_REVIEW: {
+        subject: `Application review started for ${message.reference}`,
+        title: 'Your CNG financing application is under review',
+        intro: 'The CHRGE team has started reviewing your application and supporting documents.',
+      },
+      REJECTED: {
+        subject: `Update on CNG application ${message.reference}`,
+        title: 'Your CNG financing application has been updated',
+        intro: 'Your application was not approved at this time. Sign in to your dashboard to review the decision and any next steps.',
+      },
+      INSPECTION_APPOINTMENT_BOOKED: {
+        subject: `Inspection appointment booked for ${message.reference}`,
+        title: 'Your vehicle inspection is booked',
+        intro: 'Your CHRGE vehicle inspection appointment has been scheduled.',
+      },
+      AWAITING_DEPOSIT: {
+        subject: `Financing approved — deposit required for ${message.reference}`,
+        title: 'Your CNG financing has been approved',
+        intro:
+          'Your financing is approved. Sign in to your dashboard to review the plan and initiate your deposit payment.',
+      },
+      DEPOSIT_PAID: {
+        subject: `Deposit confirmed for ${message.reference}`,
+        title: 'Your deposit has been confirmed',
+        intro: 'We have confirmed your deposit. CHRGE will now arrange your conversion appointment.',
+      },
+      CONVERSION_APPOINTMENT_BOOKED: {
+        subject: `Conversion appointment booked for ${message.reference}`,
+        title: 'Your CNG conversion is scheduled',
+        intro: 'Your vehicle conversion appointment has been booked.',
+      },
+      FINANCE_DISBURSED: {
+        subject: `Financing disbursed for ${message.reference}`,
+        title: 'Your CNG financing has been disbursed',
+        intro: 'Your financing has been disbursed and your CNG conversion has been paid for.',
+      },
+      CONVERSION_COMPLETED: {
+        subject: `CNG conversion completed for ${message.reference}`,
+        title: 'Your CNG conversion is complete',
+        intro: 'Your vehicle conversion has been recorded as completed. Your weekly repayment schedule is available in your dashboard.',
+      },
+      FULLY_PAID: {
+        subject: `CNG financing fully paid for ${message.reference}`,
+        title: 'Your CNG conversion financing is fully paid',
+        intro: 'Congratulations—your CNG conversion financing has been fully repaid. Thank you for choosing CHRGE. We encourage you to share CHRGE with other drivers ready for cleaner, more affordable mobility.',
+      },
+    };
+    const template = templates[message.status];
+    if (!template) return { messageId: 'not-required' };
+    const rows: [string, string][] = [
+      ['Application', message.reference],
+      ...(appointment ? ([['Date and time', appointment]] as [string, string][]) : []),
+      ...(message.center ? ([['Conversion centre', message.center]] as [string, string][]) : []),
+      ...(message.depositAmountNgn
+        ? ([['Deposit due', `₦${message.depositAmountNgn.toLocaleString('en-NG')}`]] as [
+            string,
+            string,
+          ][])
+        : []),
+      ['View dashboard', message.dashboardUrl],
+    ];
+    return this.sendCngEmail({
+      to: message.to,
+      subject: template.subject,
+      idempotencyKey: `cng-workflow/${message.notificationId}`,
+      purpose: `cng_workflow_${message.status.toLowerCase()}`,
+      title: template.title,
+      intro: template.intro,
+      rows,
+    });
+  }
+
   private async sendCngEmail(message: {
     to: string;
     subject: string;

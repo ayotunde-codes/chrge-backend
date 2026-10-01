@@ -73,7 +73,7 @@ export class SavePersonalDetailsDto {
 
   @ApiProperty({ example: '08012345678' })
   @IsString()
-  @Matches(NIGERIAN_PHONE_REGEX, { message: 'phone must be a valid Nigerian mobile number' })
+  @Matches(NIGERIAN_PHONE_REGEX, { message: 'phone must include a valid country code and number' })
   phone: string;
 
   @ApiProperty({ example: '12345678901' })
@@ -147,7 +147,7 @@ export class SavePersonalDetailsDto {
   @ApiProperty({ example: '08023456789' })
   @IsString()
   @Matches(NIGERIAN_PHONE_REGEX, {
-    message: 'nextOfKinPhone must be a valid Nigerian mobile number',
+    message: 'nextOfKinPhone must include a valid country code and number',
   })
   nextOfKinPhone: string;
 
@@ -382,6 +382,47 @@ export class AdvanceCngWorkflowDto {
   @IsOptional()
   @IsDateString()
   scheduledAt?: string;
+
+  @ApiPropertyOptional({ example: 'CHRGE Conversion Centre, 14 Herbert Macaulay Way, Lagos' })
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  center?: string;
+}
+
+export class CreateCngPaymentIntentDto {
+  @ApiProperty({ enum: ['DEPOSIT', 'REPAYMENT'] })
+  @IsIn(['DEPOSIT', 'REPAYMENT'])
+  kind: 'DEPOSIT' | 'REPAYMENT';
+
+  @ApiPropertyOptional({ example: 4, minimum: 1, maximum: 52 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(52)
+  weeks?: number;
+}
+
+export class ConfirmCngPaymentDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  eventId: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  providerReference: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amountNgn: number;
+
+  @IsDateString()
+  paidAt: string;
 }
 
 export class CngRepaymentWebhookDto {

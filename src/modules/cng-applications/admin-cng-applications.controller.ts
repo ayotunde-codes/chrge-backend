@@ -311,6 +311,6 @@ export class AdminCngApplicationsController {
     ) {
       throw new ForbiddenException('Fresh step-up authentication required');
     }
-    return this.cngApplicationsService.advanceWorkflow(id, dto);
+    return this.cngApplicationsService.advanceWorkflow(id, user.sub, dto);
   }
 }

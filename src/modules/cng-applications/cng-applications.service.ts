@@ -20,6 +20,8 @@ import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   AdvanceCngWorkflowDto,
+  ConfirmCngPaymentDto,
+  CreateCngPaymentIntentDto,
   AdminCngApplicationQueryDto,
   CngRepaymentWebhookDto,
   RequestPhoneVerificationDto,
@@ -49,7 +51,12 @@ type ApplicationWithDocuments = Prisma.CngApplicationGetPayload<{
 }>;
 
 type ApplicationWithWorkflow = Prisma.CngApplicationGetPayload<{
-  include: { documents: true; installments: true };
+  include: {
+    documents: true;
+    installments: true;
+    workflowEvents: { include: { actor: true } };
+    paymentIntents: true;
+  };
 }>;
 
 @Injectable()
@@ -77,6 +84,7 @@ export class CngApplicationsService {
         allowedMimeTypes: value.allowedMimeTypes,
       })),
       privacyPolicyVersion: '1.0',
+      guarantorFormUrl: this.config.get<string>('CNG_GUARANTOR_FORM_URL') || null,
     };
   }
 
@@ -110,7 +118,12 @@ export class CngApplicationsService {
   async getApplication(id: string): Promise<Record<string, unknown>> {
     const application = await this.prisma.cngApplication.findUnique({
       where: { id },
-      include: { documents: true, installments: { orderBy: { number: 'asc' } } },
+      include: {
+        documents: true,
+        installments: { orderBy: { number: 'asc' } },
+        workflowEvents: { include: { actor: true }, orderBy: { createdAt: 'desc' } },
+        paymentIntents: { orderBy: { createdAt: 'desc' }, take: 10 },
+      },
     });
     if (!application) throw new NotFoundException('CNG application not found');
     return this.mapApplication(application);
@@ -492,7 +505,6 @@ export class CngApplicationsService {
     const application = await this.getEditableApplication(id);
     const missingRequirements: string[] = [];
     if (!application.personalCompletedAt) missingRequirements.push('personal_details');
-    if (!application.phoneVerifiedAt) missingRequirements.push('phone_verification');
     if (!application.vehicleCompletedAt) missingRequirements.push('vehicle_details');
     if (!application.financingCompletedAt || !application.privacyConsentAt) {
       missingRequirements.push('financing_and_consent');
@@ -510,10 +522,30 @@ export class CngApplicationsService {
       });
     }
 
-    const updated = await this.prisma.cngApplication.update({
-      where: { id },
-      data: { status: CngApplicationStatus.SUBMITTED, submittedAt: new Date() },
-      include: { documents: true },
+    const missingGuarantorDocuments = ['guarantor_form', 'guarantor_id'].filter(
+      (type) => !uploadedTypes.has(type),
+    );
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.cngApplication.update({
+        where: { id },
+        data: { status: CngApplicationStatus.SUBMITTED, submittedAt: new Date() },
+        include: { documents: true },
+      });
+      await tx.cngApplicationWorkflowEvent.create({
+        data: { applicationId: id, status: CngApplicationStatus.SUBMITTED, note: 'Application submitted by customer' },
+      });
+      if (missingGuarantorDocuments.length) {
+        await tx.cngAdditionalInformationRequest.create({
+          data: {
+            applicationId: id,
+            question: `Please upload the following optional guarantor documents when available: ${missingGuarantorDocuments.map((type) => CNG_DOCUMENTS[type as keyof typeof CNG_DOCUMENTS].label).join(', ')}.`,
+            allowText: false,
+            allowDocuments: true,
+            requestedBy: 'system',
+          },
+        });
+      }
+      return result;
     });
 
     return this.mapApplication(updated);
@@ -603,18 +635,30 @@ export class CngApplicationsService {
       throw new BadRequestException('rejectionReason is required when rejecting an application');
     }
 
-    const updated = await this.prisma.cngApplication.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        reviewedBy: reviewerId,
-        reviewedAt: new Date(),
-        reviewNote: dto.reviewNote || application.reviewNote,
-        rejectionReason: dto.status === CngApplicationStatus.REJECTED ? dto.rejectionReason : null,
-      },
-      include: { documents: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.cngApplication.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+          reviewNote: dto.reviewNote || application.reviewNote,
+          rejectionReason:
+            dto.status === CngApplicationStatus.REJECTED ? dto.rejectionReason : null,
+        },
+        include: { documents: true },
+      });
+      await tx.cngApplicationWorkflowEvent.create({
+        data: {
+          applicationId: id,
+          status: dto.status,
+          actorId: reviewerId,
+          note: dto.rejectionReason || dto.reviewNote || null,
+        },
+      });
+      return result;
     });
-
+    await this.notifyWorkflow(updated, dto.status);
     return this.mapApplication(updated);
   }
 
@@ -632,12 +676,12 @@ export class CngApplicationsService {
     return { saved: true };
   }
 
-  async advanceWorkflow(id: string, dto: AdvanceCngWorkflowDto) {
+  async advanceWorkflow(id: string, actorId: string, dto: AdvanceCngWorkflowDto) {
     const application = await this.getApplicationRecord(id);
     const nextStatus: Partial<Record<CngApplicationStatus, CngApplicationStatus>> = {
       [CngApplicationStatus.UNDER_REVIEW]: CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
       [CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED]: CngApplicationStatus.FINANCING_APPROVED,
-      [CngApplicationStatus.FINANCING_APPROVED]: CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+      [CngApplicationStatus.DEPOSIT_PAID]: CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
       [CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED]: CngApplicationStatus.FINANCE_DISBURSED,
       [CngApplicationStatus.FINANCE_DISBURSED]: CngApplicationStatus.CONVERSION_COMPLETED,
     };
@@ -647,15 +691,29 @@ export class CngApplicationsService {
       );
     }
 
+    const appointmentStatuses: CngApplicationStatus[] = [
+      CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED,
+      CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED,
+    ];
+    if (appointmentStatuses.includes(dto.status) && (!dto.scheduledAt || !dto.center?.trim())) {
+      throw new BadRequestException('Appointment date, time, and conversion centre are required');
+    }
     const now = new Date();
-    const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : now;
+    const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
+    if (scheduledAt && scheduledAt <= now) {
+      throw new BadRequestException('Appointment date and time must be in the future');
+    }
     const timestampData: Prisma.CngApplicationUpdateInput = {};
-    if (dto.status === CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED)
+    if (dto.status === CngApplicationStatus.INSPECTION_APPOINTMENT_BOOKED) {
       timestampData.inspectionAppointmentAt = scheduledAt;
+      timestampData.inspectionCenter = dto.center!.trim();
+    }
     if (dto.status === CngApplicationStatus.FINANCING_APPROVED)
       timestampData.financingApprovedAt = now;
-    if (dto.status === CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED)
+    if (dto.status === CngApplicationStatus.CONVERSION_APPOINTMENT_BOOKED) {
       timestampData.conversionAppointmentAt = scheduledAt;
+      timestampData.conversionCenter = dto.center!.trim();
+    }
     if (dto.status === CngApplicationStatus.FINANCE_DISBURSED)
       timestampData.financeDisbursedAt = now;
     if (dto.status === CngApplicationStatus.CONVERSION_COMPLETED) {
@@ -686,19 +744,179 @@ export class CngApplicationsService {
       });
     }
 
-    return this.mapApplication(
-      await this.prisma.cngApplication.update({
+    const storedStatus =
+      dto.status === CngApplicationStatus.FINANCING_APPROVED
+        ? CngApplicationStatus.AWAITING_DEPOSIT
+        : dto.status === CngApplicationStatus.CONVERSION_COMPLETED && !tenure
+          ? CngApplicationStatus.FULLY_PAID
+          : dto.status;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.cngApplication.update({
         where: { id },
         data: {
-          status:
-            dto.status === CngApplicationStatus.CONVERSION_COMPLETED && !tenure
-              ? CngApplicationStatus.FULLY_PAID
-              : dto.status,
+          status: storedStatus,
           ...timestampData,
         },
-        include: { documents: true },
-      }),
-    );
+        include: {
+          documents: true,
+          installments: { orderBy: { number: 'asc' } },
+          workflowEvents: { include: { actor: true }, orderBy: { createdAt: 'desc' } },
+          paymentIntents: { orderBy: { createdAt: 'desc' }, take: 10 },
+        },
+      });
+      await tx.cngApplicationWorkflowEvent.create({
+        data: {
+          applicationId: id,
+          status: dto.status,
+          actorId,
+          scheduledAt,
+          center: dto.center?.trim() || null,
+        },
+      });
+      if (storedStatus !== dto.status) {
+        await tx.cngApplicationWorkflowEvent.create({
+          data: {
+            applicationId: id,
+            status: storedStatus,
+            actorId,
+            note:
+              storedStatus === CngApplicationStatus.AWAITING_DEPOSIT
+                ? 'Automatically moved to deposit collection after financing approval'
+                : 'Automatically completed because no financed balance remains',
+          },
+        });
+      }
+      return result;
+    });
+    await this.notifyWorkflow(updated, dto.status, scheduledAt, dto.center);
+    if (storedStatus !== dto.status) {
+      await this.notifyWorkflow(updated, storedStatus, scheduledAt, dto.center);
+    }
+    return this.getApplication(id);
+  }
+
+  async createPaymentIntent(id: string, dto: CreateCngPaymentIntentDto) {
+    const application = await this.prisma.cngApplication.findUnique({
+      where: { id },
+      include: { installments: { orderBy: { number: 'asc' } } },
+    });
+    if (!application) throw new NotFoundException('CNG application not found');
+    let amountNgn = 0;
+    let installmentCount = 0;
+    let firstInstallmentNumber: number | null = null;
+    if (dto.kind === 'DEPOSIT') {
+      if (application.status !== CngApplicationStatus.AWAITING_DEPOSIT) {
+        throw new ConflictException('A deposit can only be initiated after financing approval');
+      }
+      amountNgn = application.depositAmountNgn ?? 0;
+    } else {
+      if (
+        !([
+          CngApplicationStatus.CONVERSION_COMPLETED,
+          CngApplicationStatus.REPAYMENT_ACTIVE,
+        ] as CngApplicationStatus[]).includes(application.status)
+      ) {
+        throw new ConflictException('Weekly repayments are not active for this application');
+      }
+      const weeks = dto.weeks ?? 1;
+      const pending = application.installments.filter((item) => item.status !== 'PAID');
+      if (!pending.length) throw new ConflictException('All weekly installments are already paid');
+      const selected = pending.slice(0, weeks);
+      if (selected.length !== weeks) {
+        throw new BadRequestException(`Only ${pending.length} weekly installments remain`);
+      }
+      amountNgn = selected.reduce((sum, item) => sum + item.amountNgn, 0);
+      installmentCount = selected.length;
+      firstInstallmentNumber = selected[0].number;
+    }
+    if (amountNgn <= 0) throw new ConflictException('No payment is due');
+    await this.prisma.cngPaymentIntent.updateMany({
+      where: { applicationId: id, kind: dto.kind, status: 'PENDING' },
+      data: { status: 'CANCELLED' },
+    });
+    const providerReference = `CNGPAY-${randomBytes(8).toString('hex').toUpperCase()}`;
+    return this.prisma.cngPaymentIntent.create({
+      data: {
+        applicationId: id,
+        kind: dto.kind,
+        amountNgn,
+        installmentCount,
+        firstInstallmentNumber,
+        accountName: this.config.get<string>('CNG_PAYMENT_ACCOUNT_NAME', 'CHRGE Collections'),
+        accountNumber: `${randomInt(10_000_000_000, 99_999_999_999)}`,
+        bankName: this.config.get<string>('CNG_PAYMENT_BANK_NAME', 'Staging Virtual Bank'),
+        providerReference,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      },
+    });
+  }
+
+  async confirmPaymentIntent(intentId: string, dto: ConfirmCngPaymentDto) {
+    const intent = await this.prisma.cngPaymentIntent.findUnique({
+      where: { providerReference: dto.providerReference },
+      include: { application: { include: { installments: { orderBy: { number: 'asc' } } } } },
+    });
+    if (!intent || intent.id !== intentId) throw new NotFoundException('Payment intent not found');
+    if (intent.status === 'CONFIRMED') return { accepted: true, duplicate: true };
+    if (intent.status !== 'PENDING' || intent.expiresAt <= new Date()) {
+      throw new ConflictException('Payment intent has expired or is no longer payable');
+    }
+    if (intent.amountNgn !== dto.amountNgn) throw new BadRequestException('Payment amount mismatch');
+    const paidAt = new Date(dto.paidAt);
+    let finalStatus: CngApplicationStatus;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.cngPaymentIntent.update({
+        where: { id: intent.id },
+        data: { status: 'CONFIRMED', confirmedAt: paidAt, webhookEventId: dto.eventId },
+      });
+      if (intent.kind === 'DEPOSIT') {
+        finalStatus = CngApplicationStatus.DEPOSIT_PAID;
+        await tx.cngApplication.update({
+          where: { id: intent.applicationId },
+          data: { status: finalStatus, depositPaidAt: paidAt },
+        });
+      } else {
+        const first = intent.firstInstallmentNumber ?? 1;
+        const numbers = Array.from({ length: intent.installmentCount }, (_, index) => first + index);
+        await tx.cngInstallment.updateMany({
+          where: { applicationId: intent.applicationId, number: { in: numbers }, status: 'PENDING' },
+          data: { status: 'PAID', paidAt, providerReference: intent.providerReference },
+        });
+        const remaining = intent.application.installments.filter(
+          (item) => item.status !== 'PAID' && !numbers.includes(item.number),
+        ).length;
+        finalStatus = remaining === 0 ? CngApplicationStatus.FULLY_PAID : CngApplicationStatus.REPAYMENT_ACTIVE;
+        await tx.cngApplication.update({
+          where: { id: intent.applicationId },
+          data: { status: finalStatus, fullyPaidAt: remaining === 0 ? paidAt : null },
+        });
+      }
+      await tx.cngApplicationWorkflowEvent.create({
+        data: {
+          applicationId: intent.applicationId,
+          status: finalStatus,
+          note: `${intent.kind === 'DEPOSIT' ? 'Deposit' : `${intent.installmentCount} weekly installment(s)`} confirmed via payment webhook`,
+        },
+      });
+    });
+    await this.notifyWorkflow(intent.application, finalStatus!, null, null);
+    return { accepted: true, duplicate: false, status: finalStatus! };
+  }
+
+  async simulatePaymentIntent(id: string, intentId: string) {
+    if (this.config.get<string>('CHRGE_ENV') !== 'staging') {
+      throw new NotFoundException('Payment simulation is unavailable');
+    }
+    const intent = await this.prisma.cngPaymentIntent.findFirst({
+      where: { id: intentId, applicationId: id },
+    });
+    if (!intent) throw new NotFoundException('Payment intent not found');
+    return this.confirmPaymentIntent(intent.id, {
+      eventId: `sim-${randomUUID()}`,
+      providerReference: intent.providerReference,
+      amountNgn: intent.amountNgn,
+      paidAt: new Date().toISOString(),
+    });
   }
 
   async recordInstallmentPayment(dto: CngRepaymentWebhookDto) {
@@ -738,13 +956,21 @@ export class CngApplicationsService {
     });
     const paidCount = application.installments.filter((item) => item.status === 'PAID').length + 1;
     const fullyPaid = paidCount === application.installments.length;
-    await this.prisma.cngApplication.update({
+    const updatedApplication = await this.prisma.cngApplication.update({
       where: { id: application.id },
       data: {
         status: fullyPaid ? CngApplicationStatus.FULLY_PAID : CngApplicationStatus.REPAYMENT_ACTIVE,
         fullyPaidAt: fullyPaid ? new Date(dto.paidAt) : null,
       },
     });
+    await this.prisma.cngApplicationWorkflowEvent.create({
+      data: {
+        applicationId: application.id,
+        status: fullyPaid ? CngApplicationStatus.FULLY_PAID : CngApplicationStatus.REPAYMENT_ACTIVE,
+        note: `Weekly installment ${installment.number} confirmed via legacy repayment webhook`,
+      },
+    });
+    if (fullyPaid) await this.notifyWorkflow(updatedApplication, CngApplicationStatus.FULLY_PAID);
     return { accepted: true, duplicate: false, fullyPaid, installmentsPaid: paidCount };
   }
 
@@ -848,7 +1074,7 @@ export class CngApplicationsService {
       status: application.status,
       progress: {
         personal: Boolean(application.personalCompletedAt),
-        phoneVerified: Boolean(application.phoneVerifiedAt),
+        phoneVerified: true,
         vehicle: Boolean(application.vehicleCompletedAt),
         documents: missingRequiredDocuments.length === 0,
         financing: Boolean(application.financingCompletedAt),
@@ -864,8 +1090,11 @@ export class CngApplicationsService {
       rejectionReason: application.rejectionReason,
       workflow: {
         inspectionAppointmentAt: application.inspectionAppointmentAt,
+        inspectionCenter: application.inspectionCenter,
         financingApprovedAt: application.financingApprovedAt,
+        depositPaidAt: application.depositPaidAt,
         conversionAppointmentAt: application.conversionAppointmentAt,
+        conversionCenter: application.conversionCenter,
         financeDisbursedAt: application.financeDisbursedAt,
         conversionCompletedAt: application.conversionCompletedAt,
         fullyPaidAt: application.fullyPaidAt,
@@ -877,6 +1106,40 @@ export class CngApplicationsService {
                 dueAt: installment.dueAt,
                 status: installment.status,
                 paidAt: installment.paidAt,
+              }))
+            : [],
+        history:
+          'workflowEvents' in application
+            ? application.workflowEvents.map((event) => ({
+                id: event.id,
+                status: event.status,
+                actorId: event.actorId,
+                actorName: event.actor
+                  ? [event.actor.firstName, event.actor.lastName].filter(Boolean).join(' ') ||
+                    event.actor.email
+                  : event.actorId
+                    ? 'Former administrator'
+                    : 'System',
+                scheduledAt: event.scheduledAt,
+                center: event.center,
+                note: event.note,
+                createdAt: event.createdAt,
+              }))
+            : [],
+        paymentIntents:
+          'paymentIntents' in application
+            ? application.paymentIntents.map((intent) => ({
+                id: intent.id,
+                kind: intent.kind,
+                status: intent.status,
+                amountNgn: intent.amountNgn,
+                installmentCount: intent.installmentCount,
+                accountName: intent.accountName,
+                accountNumber: intent.accountNumber,
+                bankName: intent.bankName,
+                providerReference: intent.providerReference,
+                expiresAt: intent.expiresAt,
+                confirmedAt: intent.confirmedAt,
               }))
             : [],
       },
@@ -929,7 +1192,7 @@ export class CngApplicationsService {
       },
       progress: {
         personal: Boolean(application.personalCompletedAt),
-        phoneVerified: Boolean(application.phoneVerifiedAt),
+        phoneVerified: true,
         vehicle: Boolean(application.vehicleCompletedAt),
         documents: missingRequiredDocuments.length === 0,
         financing: Boolean(application.financingCompletedAt),
@@ -965,6 +1228,36 @@ export class CngApplicationsService {
         updatedBy: 'customer',
         changedFields: [field],
         dashboardUrl: `${base}/cng/dashboard/${applicationId}`,
+      })
+      .catch(() => undefined);
+  }
+
+  private async notifyWorkflow(
+    application: {
+      id: string;
+      reference: string;
+      email: string | null;
+      depositAmountNgn: number | null;
+    },
+    status: CngApplicationStatus,
+    scheduledAt?: Date | null,
+    center?: string | null,
+  ) {
+    if (!application.email) return;
+    const base = this.config.get<string>(
+      'CHRGE_FRONTEND_URL',
+      'https://chrge-frontend-staging.vercel.app',
+    );
+    await this.email
+      .sendCngWorkflowUpdate({
+        to: application.email,
+        notificationId: randomUUID(),
+        reference: application.reference,
+        status,
+        dashboardUrl: `${base}/cng/dashboard/${application.id}`,
+        scheduledAt,
+        center,
+        depositAmountNgn: application.depositAmountNgn,
       })
       .catch(() => undefined);
   }

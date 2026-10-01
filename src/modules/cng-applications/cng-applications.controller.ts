@@ -36,6 +36,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CngApplicationAccessGuard } from './cng-application-access.guard';
 import { CngApplicationsService } from './cng-applications.service';
 import {
+  CreateCngPaymentIntentDto,
   RequestPhoneVerificationDto,
   SaveFinancingDetailsDto,
   SavePersonalDetailsDto,
@@ -299,6 +300,28 @@ export class CngApplicationsController {
   ): Promise<Record<string, unknown>> {
     this.assertApplicationsEnabled();
     return this.cngApplicationsService.submitApplication(id);
+  }
+
+  @Post(':id/payment-intents')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Create a 30-minute deposit or weekly-repayment virtual account' })
+  createPaymentIntent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateCngPaymentIntentDto,
+  ) {
+    return this.cngApplicationsService.createPaymentIntent(id, dto);
+  }
+
+  @Post(':id/payment-intents/:intentId/simulate')
+  @UseGuards(...APPLICATION_ACCESS_GUARDS)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Confirm a payment in staging only' })
+  simulatePayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('intentId', ParseUUIDPipe) intentId: string,
+  ) {
+    return this.cngApplicationsService.simulatePaymentIntent(id, intentId);
   }
 
   @Post(':id/cancel')

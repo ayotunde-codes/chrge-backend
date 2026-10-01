@@ -39,6 +39,11 @@ export class AdminCngReviewService {
         },
         revisions: { orderBy: { createdAt: 'desc' } },
         documentVersions: { orderBy: { replacedAt: 'desc' } },
+        workflowEvents: {
+          include: { actor: { select: { email: true, firstName: true, lastName: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
+        paymentIntents: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
     if (!app) throw new NotFoundException('CNG application not found');
@@ -168,8 +173,11 @@ export class AdminCngReviewService {
       rejectionReason: app.rejectionReason,
       workflow: {
         inspectionAppointmentAt: app.inspectionAppointmentAt,
+        inspectionCenter: app.inspectionCenter,
         financingApprovedAt: app.financingApprovedAt,
+        depositPaidAt: app.depositPaidAt,
         conversionAppointmentAt: app.conversionAppointmentAt,
+        conversionCenter: app.conversionCenter,
         financeDisbursedAt: app.financeDisbursedAt,
         conversionCompletedAt: app.conversionCompletedAt,
         fullyPaidAt: app.fullyPaidAt,
@@ -179,6 +187,31 @@ export class AdminCngReviewService {
           dueAt: installment.dueAt,
           status: installment.status,
           paidAt: installment.paidAt,
+        })),
+        history: app.workflowEvents.map((event) => ({
+          id: event.id,
+          status: event.status,
+          actorId: event.actorId,
+          actorName: event.actor
+            ? [event.actor.firstName, event.actor.lastName].filter(Boolean).join(' ') ||
+              event.actor.email
+            : event.actorId
+              ? 'Former administrator'
+              : 'System',
+          scheduledAt: event.scheduledAt,
+          center: event.center,
+          note: event.note,
+          createdAt: event.createdAt,
+        })),
+        paymentIntents: app.paymentIntents.map((intent) => ({
+          id: intent.id,
+          kind: intent.kind,
+          status: intent.status,
+          amountNgn: intent.amountNgn,
+          installmentCount: intent.installmentCount,
+          providerReference: intent.providerReference,
+          expiresAt: intent.expiresAt,
+          confirmedAt: intent.confirmedAt,
         })),
       },
       createdAt: app.createdAt,

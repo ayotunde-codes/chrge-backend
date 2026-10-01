@@ -101,7 +101,7 @@ export const NIGERIAN_STATES = [
   'Zamfara',
 ] as const;
 
-export const NIGERIAN_PHONE_REGEX = /^(?:\+234|0)(?:70|80|81|90|91)\d{8}$/;
+export const NIGERIAN_PHONE_REGEX = /^(?:\+[1-9]\d{7,14}|0(?:70|80|81|90|91)\d{8})$/;
 
 export type CngDocumentConfig = {
   label: string;
@@ -140,7 +140,7 @@ export const CNG_DOCUMENTS = {
   },
   proof_income: {
     label: 'Proof of Income',
-    required: true,
+    required: false,
     maxSizeBytes: 5 * 1024 * 1024,
     allowedMimeTypes: DOCUMENT_MIME_TYPES,
   },
@@ -196,6 +196,18 @@ export const CNG_DOCUMENTS = {
     label: 'Confirmation Letter',
     required: false,
     maxSizeBytes: 2 * 1024 * 1024,
+    allowedMimeTypes: DOCUMENT_MIME_TYPES,
+  },
+  guarantor_form: {
+    label: 'Completed Guarantor Form',
+    required: false,
+    maxSizeBytes: 5 * 1024 * 1024,
+    allowedMimeTypes: DOCUMENT_MIME_TYPES,
+  },
+  guarantor_id: {
+    label: 'Guarantor Government-issued ID',
+    required: false,
+    maxSizeBytes: 5 * 1024 * 1024,
     allowedMimeTypes: DOCUMENT_MIME_TYPES,
   },
 } satisfies Record<string, CngDocumentConfig>;
